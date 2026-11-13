@@ -519,6 +519,8 @@
     if (digits.length < 10) return showError('Informe um telefone válido com DDD.');
 
     const payload = {
+      name: name,
+      service: state.service.name,
       barber: bookingBarber(),
       startTime: state.slot.startTime,
       endTime: state.slot.endTime,

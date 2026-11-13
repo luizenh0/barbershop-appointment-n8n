@@ -476,7 +476,7 @@
         1000
       ],
       "parameters": {
-        "jsCode": "const body = $('Book Appointment Webhook').first().json.body || {};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst rows = $input.all().map(i => i.json);\n\nconst found = rows.find(r => norm(r.barber) === norm(body.barber)) || rows[0] || {};\nconst calendarId = String(found.calendarId || 'primary').trim();\nconst barberName = found.barber || body.barber || 'Barbeiro';\n\nreturn [{\n  json: {\n    calendarId,\n    barber: barberName,\n    startTime: body.startTime,\n    endTime: body.endTime,\n    summary: body.summary || 'Corte Barbearia',\n    description: body.description || '',\n    number: String(body.number || body.phone_number || '')\n  }\n}];"
+        "jsCode": "const body = $('Book Appointment Webhook').first().json.body || {};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst rows = $input.all().map(i => i.json);\n\nconst found = rows.find(r => norm(r.barber) === norm(body.barber)) || rows[0] || {};\nconst calendarId = String(found.calendarId || 'primary').trim();\nconst barberName = found.barber || body.barber || 'Barbeiro';\nconst clientName = body.name || String(body.summary || '').split('-')[1]?.trim() || 'Cliente';\n\nreturn [{\n  json: {\n    calendarId,\n    barber: barberName,\n    name: clientName,\n    service: body.service || 'Corte',\n    startTime: body.startTime,\n    endTime: body.endTime,\n    summary: body.summary || 'Corte Barbearia',\n    description: body.description || '',\n    number: String(body.number || body.phone_number || '')\n  }\n}];"
       }
     },
     {
@@ -508,13 +508,47 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        440,
+        660,
         1000
       ],
       "parameters": {
         "options": {},
         "respondWith": "json",
         "responseBody": "={{ { \"status\": \"booked\", \"barber\": $('Prepare Booking Event').first().json.barber, \"startTime\": $('Prepare Booking Event').first().json.startTime, \"endTime\": $('Prepare Booking Event').first().json.endTime, \"eventId\": $json.id, \"calendarId\": $('Prepare Booking Event').first().json.calendarId } }}"
+      }
+    },
+    {
+      "id": "77adc185-d1d8-4426-88f7-6fd626b6a312",
+      "name": "Log Appointment in Summary Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        1000
+      ],
+      "parameters": {
+        "operation": "append",
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Summary"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $('Prepare Booking Event').first().json.name }}",
+            "Number": "={{ $('Prepare Booking Event').first().json.number }}",
+            "Barber": "={{ $('Prepare Booking Event').first().json.barber }}",
+            "Summary": "={{ $('Prepare Booking Event').first().json.summary + ' - ' + new Date($('Prepare Booking Event').first().json.startTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) }}"
+          },
+          "matchingColumns": []
+        },
+        "options": {}
       }
     }
   ],
@@ -767,6 +801,17 @@
       ]
     },
     "Create Appointment in Calendar": {
+      "main": [
+        [
+          {
+            "node": "Log Appointment in Summary Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Appointment in Summary Sheet": {
       "main": [
         [
           {
