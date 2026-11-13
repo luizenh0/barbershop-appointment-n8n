@@ -130,7 +130,8 @@
       const errText = await res.text().catch(() => '');
       throw new Error(`(HTTP ${res.status}): ${errText || res.statusText}`);
     }
-    return res.json();
+    const text = await res.text();
+    return text ? JSON.parse(text) : { status: 'booked' };
   }
 
   const api = {

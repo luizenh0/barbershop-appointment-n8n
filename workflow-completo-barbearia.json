@@ -514,7 +514,7 @@
       "parameters": {
         "options": {},
         "respondWith": "json",
-        "responseBody": "={{ { \"status\": \"booked\", \"barber\": $('Prepare Booking Event').first().json.barber, \"startTime\": $('Prepare Booking Event').first().json.startTime, \"endTime\": $('Prepare Booking Event').first().json.endTime, \"eventId\": $json.id, \"calendarId\": $('Prepare Booking Event').first().json.calendarId } }}"
+        "responseBody": "={{ JSON.stringify({ status: 'booked', barber: $('Prepare Booking Event').first().json.barber, startTime: $('Prepare Booking Event').first().json.startTime, endTime: $('Prepare Booking Event').first().json.endTime, eventId: $('Create Appointment in Calendar').first().json.id || 'ok', calendarId: $('Prepare Booking Event').first().json.calendarId }) }}"
       }
     },
     {
