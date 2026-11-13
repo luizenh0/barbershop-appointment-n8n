@@ -1,10 +1,10 @@
-# 💈 Barbershop Appointment System (n8n + Google Sheets + Google Calendar)
+#  Barbershop Appointment System (n8n + Google Sheets + Google Calendar)
 
 Sistema moderno e completo de agendamento online para barbearias e salões, integrado via **n8n** com **Google Sheets** (gestão de barbeiros e serviços) e **Google Calendar** (consulta e reserva de horários em tempo real).
 
 ---
 
-## 🚀 Funcionalidades
+##  Funcionalidades
 
 - **Escolha de Serviço Dinâmica:** Lista serviços, durações e preços direto da aba `Servicos` da planilha.
 - **Múltiplos Barbeiros:** Suporte a barbeiros com agendas, dias da semana e horários de expediente personalizados.
