@@ -1,4 +1,4 @@
-# 💈 Sistema de Agendamento Online para Barbearia com n8n
+# 💈 Barbershop Appointment System (n8n + Google Sheets + Google Calendar)
 
 Sistema moderno e completo de agendamento online para barbearias e salões, integrado via **n8n** com **Google Sheets** (gestão de barbeiros e serviços) e **Google Calendar** (consulta e reserva de horários em tempo real).
 
@@ -12,6 +12,7 @@ Sistema moderno e completo de agendamento online para barbearias e salões, inte
 - **Disponibilidade em Tempo Real:** Consulta a agenda do Google Calendar de cada profissional e exibe apenas os horários livres.
 - **Bloqueio de Folgas:** Eventos ou folgas criados na agenda do barbeiro bloqueiam os horários automaticamente.
 - **Gravação Automática:** Cria o evento na agenda do profissional e gera comprovante com código de reserva.
+- **Registro na Planilha:** Armazena histórico automático na aba `Summary` com nome, WhatsApp e data/hora.
 - **Frontend Responsivo:** Interface moderna (dark theme com detalhes em dourado) adaptável para celulares e computadores.
 
 ---
@@ -19,6 +20,7 @@ Sistema moderno e completo de agendamento online para barbearias e salões, inte
 ## 📁 Estrutura do Projeto
 
 ```text
+barbershop-appointment-n8n/
 ├── frontend/
 │   ├── index.html       # Interface do cliente (5 passos intuitivos)
 │   ├── styles.css       # Estilização moderna e responsiva
@@ -30,7 +32,7 @@ Sistema moderno e completo de agendamento online para barbearias e salões, inte
 
 ---
 
-## 📊 Estrutura da Planilha Google (Google Sheets)
+##  Estrutura da Planilha Google (Google Sheets)
 
 Crie uma planilha no Google Sheets com 3 abas obrigatórias:
 
@@ -53,7 +55,7 @@ Cabeçalho para registro do histórico de reservas:
 
 ---
 
-## ⚙️ Como Configurar o n8n
+##  Como Configurar o n8n
 
 1. Importe o arquivo `workflow-completo-barbearia.json` no seu n8n.
 2. Conecte as credenciais OAuth2:
@@ -65,7 +67,7 @@ Cabeçalho para registro do histórico de reservas:
 
 ---
 
-## 🌐 Como Executar a Tela Frontend
+##  Como Executar a Tela Frontend
 
 1. Abra o arquivo `frontend/config.js` e configure a URL base do seu n8n:
    ```javascript
