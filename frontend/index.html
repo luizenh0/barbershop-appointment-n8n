@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agendamento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div class="logo" aria-hidden="true">✂</div>
+      <h1 id="shopName">Barbearia</h1>
+      <p class="subtitle">Agende seu horário em poucos passos</p>
+    </header>
+
+    <div id="mockBanner" class="banner hidden">
+      Modo demonstração: dados de exemplo, nada é gravado na agenda.
+    </div>
+
+    <section id="bookingView">
+      <div class="card">
+        <h2><span class="step">1</span> Escolha o serviço</h2>
+        <div id="serviceList" class="service-list" role="radiogroup" aria-label="Serviço">
+          <div class="skeleton skeleton-service"></div>
+          <div class="skeleton skeleton-service"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="step">2</span> Escolha o barbeiro</h2>
+        <div id="barberList" class="barber-list" role="radiogroup" aria-label="Barbeiro">
+          <div class="skeleton skeleton-barber"></div>
+          <div class="skeleton skeleton-barber"></div>
+          <div class="skeleton skeleton-barber"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="step">3</span> Escolha o dia</h2>
+        <div id="dayList" class="day-list" role="radiogroup" aria-label="Dia"></div>
+      </div>
+
+      <div class="card">
+        <h2><span class="step">4</span> Escolha o horário</h2>
+        <div id="slotArea">
+          <p class="hint">Escolha o serviço, o barbeiro e o dia para ver os horários livres.</p>
+        </div>
+      </div>
+
+      <form id="customerForm" class="card" novalidate>
+        <h2><span class="step">5</span> Seus dados</h2>
+        <label class="field">
+          <span>Nome</span>
+          <input id="name" type="text" autocomplete="name" placeholder="Seu nome" required />
+        </label>
+        <label class="field">
+          <span>Telefone (WhatsApp)</span>
+          <input id="phone" type="tel" autocomplete="tel" inputmode="numeric" placeholder="(11) 99999-9999" required />
+        </label>
+
+        <div id="summary" class="summary hidden"></div>
+        <div id="formError" class="alert alert-error hidden" role="alert"></div>
+        <div id="suggestions" class="alert alert-warn hidden" role="alert"></div>
+
+        <button id="submitBtn" type="submit" class="btn-primary" disabled>Confirmar agendamento</button>
+      </form>
+    </section>
+
+    <section id="successView" class="card success hidden" aria-live="polite">
+      <div class="success-icon">✓</div>
+      <h2>Agendamento confirmado!</h2>
+      <dl id="successDetails" class="details"></dl>
+      <p class="hint">Guarde o código do agendamento caso precise remarcar ou cancelar.</p>
+      <button id="newBookingBtn" type="button" class="btn-secondary">Fazer outro agendamento</button>
+    </section>
+
+    <footer class="footer" id="footerInfo"></footer>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,787 @@
+{
+  "name": "Barbershop - Booking API (tela do cliente)",
+  "nodes": [
+    {
+      "id": "36bfb9f1-0951-4135-9ec0-4c37d8195eec",
+      "name": "Booking Options Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -440,
+        200
+      ],
+      "parameters": {
+        "path": "booking-options",
+        "httpMethod": "GET",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "b1179d58-c64c-4199-9a79-28e3f504fb86"
+    },
+    {
+      "id": "b88950b6-4094-4171-86ef-816a9b0d6600",
+      "name": "Read Barbers Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -220,
+        200
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Barbers"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "e74708a4-a1fa-40dd-8d1b-6702cdc487bc",
+      "name": "Read Services Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        0,
+        120
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Servicos"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "b47ada1d-1330-4edc-9b35-a969e436ed78",
+      "name": "Build Booking Options",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const RULES = {\n  rangeDays: 10,\n  step: 30,\n  defaultDuration: 60,\n  defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00',\n  defaultEnd: '17:00',\n};\n\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nconst hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber ?? '').trim();\n    const calendarId = String(r.calendarId ?? '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico ?? '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst barbers = readBarbers($('Read Barbers Sheet').all())\n  .map(b => ({ name: b.barber, days: b.days, start: hhmm(b.start), end: hhmm(b.end) }));\nconst services = readServices($input.all());\nreturn [{ json: { status: 'ok', timezone: $now.zoneName, rangeDays: RULES.rangeDays, barbers, services } }];"
+      }
+    },
+    {
+      "id": "6fe0faa8-3b85-464a-a631-088ff11027af",
+      "name": "Send Booking Options",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        40
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      }
+    },
+    {
+      "id": "3c0a2962-e9a5-4c03-a9b1-b2f9d575958f",
+      "name": "Send Options System Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        220,
+        260
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"system_error\", \"message\": \"Não foi possível carregar barbeiros e serviços.\" } }}"
+      }
+    },
+    {
+      "id": "0a8fb8ff-0baf-46d6-b5ff-f6fe4b70d40c",
+      "name": "Available Slots Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -440,
+        600
+      ],
+      "parameters": {
+        "path": "available-slots",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "252b0db6-517b-4965-843b-a9ede3c657fb"
+    },
+    {
+      "id": "8653e442-104e-4d63-97b8-9e4ed30a518b",
+      "name": "Validate Slots Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const RULES = { rangeDays: 10, step: 30, defaultDuration: 60 };\nconst SHOP_TZ = $now.zoneName;\nconst body = $input.first().json.body || {};\nconst barber = String(body.barber || '').trim();\nconst service = String(body.service || '').trim();\nconst date = String(body.date || '').trim();\nconst today = $now.setZone(SHOP_TZ).startOf('day');\nconst day = DateTime.fromISO(date, { zone: SHOP_TZ });\n\nlet message = '';\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || !day.isValid) message = 'date must be YYYY-MM-DD.';\nelse if (day < today) message = 'date cannot be in the past.';\nelse if (day >= today.plus({ days: RULES.rangeDays })) message = 'date must be within ' + RULES.rangeDays + ' days.';\n\nreturn [{ json: {\n  valid: !message, message, barber, service, date, timezone: SHOP_TZ, rules: RULES,\n  weekday: day.isValid ? day.weekday : null,\n  dayStart: day.isValid ? day.startOf('day').toISO() : null,\n  dayEnd: day.isValid ? day.plus({ days: 1 }).startOf('day').toISO() : null,\n} }];"
+      }
+    },
+    {
+      "id": "724d55ab-7fb5-48f6-b9e4-0986fa957dd3",
+      "name": "If Slots Request is Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        600
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "51fd2d66-0d1b-46c2-bce4-d03afd8f38ad",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "4870e66b-8c32-4657-8fec-b4af122e9ce8",
+      "name": "Send Invalid Slots Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        220,
+        780
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"invalid_request\", \"message\": $json.message } }}"
+      }
+    },
+    {
+      "id": "8a39135a-858b-4f35-a002-c90a6388d8db",
+      "name": "Read Barbers for Slots",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        220,
+        520
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Barbers"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "6bfdc3de-93e7-4d05-a3d5-138f474c6c7c",
+      "name": "Read Services for Slots",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        440
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Servicos"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "5b08798c-4f48-4406-b745-4bb26869c3ce",
+      "name": "Send Slots System Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        660,
+        780
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"system_error\", \"message\": \"Não foi possível acessar as agendas agora. Tente novamente.\" } }}"
+      }
+    },
+    {
+      "id": "7aa8001c-5980-4743-af12-756925492dfa",
+      "name": "Select Barbers for Day",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const RULES = {\n  rangeDays: 10, step: 30, defaultDuration: 60, defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00', defaultEnd: '17:00',\n};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber ?? '').trim();\n    const calendarId = String(r.calendarId ?? '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico ?? '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst req = $('Validate Slots Request').first().json;\nconst ANY = ['', 'any', 'no preference', 'none', 'no', 'sem preferencia'];\nconst isAny = ANY.includes(norm(req.barber));\n\nconst services = readServices($input.all());\nconst service = services.find(s => norm(s.name) === norm(req.service));\nconst stop = response => [{ json: { _stop: true, _response: response } }];\nif (req.service && !service) return stop({ status: 'service_not_found', message: 'Serviço não encontrado.' });\nconst duration = service ? service.duration : RULES.defaultDuration;\n\nconst all = readBarbers($('Read Barbers for Slots').all());\nconst chosen = isAny ? all : all.filter(b => norm(b.barber) === norm(req.barber));\nif (!chosen.length) return stop({ status: 'barber_not_found', message: 'Barbeiro não encontrado.' });\n\nconst working = chosen.filter(b => b.days.includes(req.weekday));\nif (!working.length) {\n  return stop({ status: 'ok', date: req.date, barber: isAny ? 'any' : chosen[0].barber, duration, dayOff: true, slots: [] });\n}\nreturn working.map(b => ({ json: { ...b, isAny, duration, _stop: false } }));"
+      }
+    },
+    {
+      "id": "9805ef7a-5ea3-45cc-9370-a2fe666a5e3b",
+      "name": "If Stop Early",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        440
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "f476cf88-b2cd-4199-8130-c8993a8a9305",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json._stop }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "87f15acf-753b-404a-99a5-0e15b4208f24",
+      "name": "Send Early Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        320
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ $json._response }}"
+      }
+    },
+    {
+      "id": "16861bdf-9094-4ab5-a037-1825b4038111",
+      "name": "Loop Over Barbers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        560
+      ],
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "327134cf-e693-4a29-9cb9-2ea50f6c1335",
+      "name": "Get Barber Events of Day",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1320,
+        680
+      ],
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarId }}"
+        },
+        "operation": "getAll",
+        "returnAll": true,
+        "timeMin": "={{ $('Validate Slots Request').first().json.dayStart }}",
+        "timeMax": "={{ $('Validate Slots Request').first().json.dayEnd }}",
+        "options": {
+          "singleEvents": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "69589834-5022-4c33-8068-fe0384cd2caf",
+      "name": "Label Event Source",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        680
+      ],
+      "parameters": {
+        "options": {},
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0e1f63f5-eef0-4f1c-b12e-1f2d6d86c137",
+              "name": "sourceCalendarId",
+              "type": "string",
+              "value": "={{ $('Loop Over Barbers').item.json.calendarId }}"
+            },
+            {
+              "id": "2971a940-32b1-42cc-9ac5-afd6595caed4",
+              "name": "sourceBarber",
+              "type": "string",
+              "value": "={{ $('Loop Over Barbers').item.json.barber }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "505d15c0-93d8-45d8-99a5-255bde3e23f9",
+      "name": "Compute Day Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const req = $('Validate Slots Request').first().json;\nconst step = req.rules.step;\nconst SHOP_TZ = req.timezone;\nconst barbers = $('Select Barbers for Day').all().map(i => i.json);\nconst isAny = barbers[0].isAny;\nconst duration = barbers[0].duration;\nconst calSet = new Set(barbers.map(b => b.calendarId));\n\nconst busy = {};\nconst failed = new Set();\n\nlet allItems = [];\ntry {\n  allItems = $('Label Event Source').all();\n} catch (e) {\n  allItems = [];\n}\n\nfor (const it of allItems) {\n  const ev = it.json || {};\n  const cal = String(ev.sourceCalendarId || '').trim();\n  if (!calSet.has(cal)) continue;\n  if (ev.error) { failed.add(cal); continue; }\n  if (!ev.start) continue;\n  if (String(ev.status || '').toLowerCase() === 'cancelled') continue;\n  if (Array.isArray(ev.attendees) && ev.attendees.some(a => a && a.self === true && String(a.responseStatus || '').toLowerCase() === 'declined')) continue;\n\n  const allDay = !ev.start.dateTime;\n  const s = allDay ? DateTime.fromISO(ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(ev.start.dateTime);\n  const endRaw = ev.end ? (ev.end.dateTime || ev.end.date) : null;\n  const e = allDay ? DateTime.fromISO(endRaw || ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(endRaw || ev.start.dateTime);\n  if (!s.isValid || !e.isValid) continue;\n  (busy[cal] = busy[cal] || []).push({ start: s.toMillis(), end: Math.max(e.toMillis(), s.toMillis()) });\n}\n\nconst readable = barbers.filter(b => !failed.has(b.calendarId));\nif (!readable.length) {\n  return [{ json: { status: 'system_error', message: 'Não foi possível acessar a agenda do Google. Verifique a credencial.' } }];\n}\n\nconst day = DateTime.fromISO(req.date, { zone: SHOP_TZ });\nconst nowMs = Date.now();\nconst first = Math.min(...readable.map(b => b.start));\nconst last = Math.max(...readable.map(b => b.end));\nconst slots = [];\n\nfor (let m = first; m + duration <= last; m += step) {\n  const s = day.set({ hour: Math.floor(m / 60), minute: m % 60, second: 0, millisecond: 0 });\n  const e = s.plus({ minutes: duration });\n  if (s.toMillis() < nowMs) continue;\n  const free = readable\n    .filter(b => m >= b.start && m + duration <= b.end)\n    .filter(b => !(busy[b.calendarId] || []).some(x => s.toMillis() < x.end && e.toMillis() > x.start))\n    .map(b => b.barber);\n  if (free.length) {\n    slots.push({\n      startTime: s.toISO({ suppressMilliseconds: true }),\n      endTime: e.toISO({ suppressMilliseconds: true }),\n      label: s.toFormat('HH:mm'),\n      barbers: free,\n    });\n  }\n}\n\nreturn [{ json: {\n  status: 'ok',\n  date: req.date,\n  barber: isAny ? 'any' : barbers[0].barber,\n  timezone: SHOP_TZ,\n  duration,\n  calendarReadStatus: readable.length === barbers.length ? 'ok' : 'partial',\n  slots,\n} }];"
+      }
+    },
+    {
+      "id": "b4873781-e191-46b5-ace4-57d7ee143bd6",
+      "name": "Send Available Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1540,
+        440
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      }
+    },
+    {
+      "id": "a5fcb7a8-d5b1-4728-947e-448536dbfd1d",
+      "name": "Book Appointment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -440,
+        1000
+      ],
+      "parameters": {
+        "path": "book-appointment",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "62b002b5-8ca9-4771-ad9d-7b7ec1c65976"
+    },
+    {
+      "id": "b9d2596a-756a-47c7-a6eb-dbdfcd7ab216",
+      "name": "Read Barbers for Booking",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -220,
+        1000
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Barbers"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "eed9bea1-cd7b-484d-bedf-49a1f597aa40",
+      "name": "Prepare Booking Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1000
+      ],
+      "parameters": {
+        "jsCode": "const body = $('Book Appointment Webhook').first().json.body || {};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst rows = $input.all().map(i => i.json);\n\nconst found = rows.find(r => norm(r.barber) === norm(body.barber)) || rows[0] || {};\nconst calendarId = String(found.calendarId || 'primary').trim();\nconst barberName = found.barber || body.barber || 'Barbeiro';\n\nreturn [{\n  json: {\n    calendarId,\n    barber: barberName,\n    startTime: body.startTime,\n    endTime: body.endTime,\n    summary: body.summary || 'Corte Barbearia',\n    description: body.description || '',\n    number: String(body.number || body.phone_number || '')\n  }\n}];"
+      }
+    },
+    {
+      "id": "52ac982f-775a-4ee7-8afe-2bf05c19c478",
+      "name": "Create Appointment in Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        220,
+        1000
+      ],
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarId }}"
+        },
+        "start": "={{ $json.startTime }}",
+        "end": "={{ $json.endTime }}",
+        "additionalFields": {
+          "summary": "={{ $json.summary }}",
+          "description": "={{ $json.description }}"
+        }
+      }
+    },
+    {
+      "id": "2a7f79ab-5423-4b56-8d0d-1824854f81c9",
+      "name": "Send Booking Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        1000
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"booked\", \"barber\": $('Prepare Booking Event').first().json.barber, \"startTime\": $('Prepare Booking Event').first().json.startTime, \"endTime\": $('Prepare Booking Event').first().json.endTime, \"eventId\": $json.id, \"calendarId\": $('Prepare Booking Event').first().json.calendarId } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Booking Options Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Barbers Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Barbers Sheet": {
+      "main": [
+        [
+          {
+            "node": "Read Services Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Options System Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Services Sheet": {
+      "main": [
+        [
+          {
+            "node": "Build Booking Options",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Options System Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Booking Options": {
+      "main": [
+        [
+          {
+            "node": "Send Booking Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Available Slots Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Slots Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Slots Request": {
+      "main": [
+        [
+          {
+            "node": "If Slots Request is Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Slots Request is Valid": {
+      "main": [
+        [
+          {
+            "node": "Read Barbers for Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Invalid Slots Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Barbers for Slots": {
+      "main": [
+        [
+          {
+            "node": "Read Services for Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Slots System Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Services for Slots": {
+      "main": [
+        [
+          {
+            "node": "Select Barbers for Day",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Slots System Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Barbers for Day": {
+      "main": [
+        [
+          {
+            "node": "If Stop Early",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Stop Early": {
+      "main": [
+        [
+          {
+            "node": "Send Early Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Barbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Barbers": {
+      "main": [
+        [
+          {
+            "node": "Compute Day Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Barber Events of Day",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Barber Events of Day": {
+      "main": [
+        [
+          {
+            "node": "Label Event Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label Event Source": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Barbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Day Slots": {
+      "main": [
+        [
+          {
+            "node": "Send Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Book Appointment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Barbers for Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Barbers for Booking": {
+      "main": [
+        [
+          {
+            "node": "Prepare Booking Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Booking Event": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment in Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment in Calendar": {
+      "main": [
+        [
+          {
+            "node": "Send Booking Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "America/Sao_Paulo",
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
