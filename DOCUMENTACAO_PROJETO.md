@@ -4,7 +4,8 @@
 > **Modalidade:** Projeto Prático Final (Tema: Google Workspace + n8n + LLM Gemini 1.5)  
 > **Tecnologias Centrais:** n8n Workflow Engine, Google Gemini 1.5 Flash (via LangChain), Google Sheets API v4, Google Calendar API v3, JavaScript Vanilla (ES6+), HTML5, CSS3  
 > **Fuso Horário Padrão do Sistema:** `America/Sao_Paulo` (UTC-03:00 / Horário de Brasília)  
-> **Artefato Central do Workflow:** [`workflow-completo-barbearia.json`](./workflow-completo-barbearia.json) (38 nós, 30 conexões)
+> **Artefato Central do Workflow:** [`workflow-completo-barbearia.json`](./workflow-completo-barbearia.json) (38 nós, 30 conexões)  
+> **Demonstração Online (Live Demo):** [https://luizenh0.github.io/barbershop-appointment-n8n/frontend/](https://luizenh0.github.io/barbershop-appointment-n8n/frontend/)
 
 ---
 

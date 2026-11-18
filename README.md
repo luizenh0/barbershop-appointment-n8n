@@ -2,6 +2,9 @@
 
 Sistema completo de autoatendimento conversacional e agendamento em tempo real para barbearias, integrando **Frontend Web responsivo (estilo WhatsApp Web)**, **n8n Workflow Automation**, **Google Calendar API**, **Google Sheets API** e **Google Gemini 1.5 Flash (via LangChain)**.
 
+> 🚀 **Demonstração Online em Tempo Real (Live Demo):**  
+> Acesse e teste a interface interativa diretamente no seu navegador: [**https://luizenh0.github.io/barbershop-appointment-n8n/frontend/**](https://luizenh0.github.io/barbershop-appointment-n8n/frontend/)  
+>  
 > 📄 **Documentação Técnica Completa:**  
 > O relatório detalhado de arquitetura, máquina de estados, engenharia de prompts e fórmulas matriciais está disponível em: [**DOCUMENTACAO_PROJETO.md**](./DOCUMENTACAO_PROJETO.md).
 
@@ -29,6 +32,9 @@ flowchart LR
 ---
 
 ## 2. Demonstração Visual do Sistema
+
+> 🌐 **Acesse a aplicação ao vivo agora:** [**https://luizenh0.github.io/barbershop-appointment-n8n/frontend/**](https://luizenh0.github.io/barbershop-appointment-n8n/frontend/)  
+> *(Interface web interativa com simulação inteligente de atendimento conversacional via WhatsApp Web)*
 
 ### 2.1. Jornada do Cliente no Frontend (Fluxo Completo em 3 Etapas)
 
