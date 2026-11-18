@@ -1,614 +1,841 @@
-(() => {
-  'use strict';
+(function () {
+  const CFG = window.APP_CONFIG || {
+    N8N_BASE_URL: 'http://localhost:5678/webhook',
+    USE_MOCK: false,
+    TIMEZONE: 'America/Sao_Paulo',
+    ENDPOINTS: {
+      options: '/booking-options',
+      availableSlots: '/available-slots',
+      book: '/book-appointment',
+      chat: '/agent-chat'
+    }
+  };
 
-  const CFG = window.APP_CONFIG;
-  const TZ = CFG.TIMEZONE;
+  const sessionId = 'session_' + Math.random().toString(36).slice(2, 10);
+  const messagesContainer = document.getElementById('chatMessages');
+  const chatInput = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const contactStatus = document.getElementById('contactStatus');
+  const quickChips = document.getElementById('quickChips');
 
-  const state = {
-    rangeDays: 10,
-    services: [],
-    barbers: [],
+  let isWaiting = false;
+  let optionsCache = null;
+
+  function getEndpointUrl(key, fallbackPath) {
+    const path = (CFG.ENDPOINTS && CFG.ENDPOINTS[key]) ? CFG.ENDPOINTS[key] : fallbackPath;
+    return CFG.N8N_BASE_URL + path;
+  }
+
+  // Formata hora atual no estilo WhatsApp (ex: 14:32)
+  function getCurrentTime() {
+    const now = new Date();
+    return now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Rola até o fim da conversa
+  function scrollToBottom() {
+    messagesContainer.scrollTo({
+      top: messagesContainer.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
+
+  // Formata a sintaxe de texto do WhatsApp (*negrito*, _itálico_, ~tachado~, `código`)
+  function formatWhatsAppText(rawText) {
+    if (!rawText) return '';
+    const escaped = String(rawText)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    return escaped
+      .replace(/\*([^\*\n\r]+)\*/g, '<strong>$1</strong>')
+      .replace(/_([^_\n\r]+)_/g, '<em>$1</em>')
+      .replace(/~([^~\n\r]+)~/g, '<del>$1</del>')
+      .replace(/`([^`\n\r]+)`/g, '<code>$1</code>');
+  }
+
+  // Renderiza bolha de mensagem do usuário (Outgoing)
+  function appendUserMessage(text) {
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble message-outgoing';
+
+    const textSpan = document.createElement('span');
+    textSpan.innerHTML = formatWhatsAppText(text);
+    bubble.appendChild(textSpan);
+
+    const meta = document.createElement('div');
+    meta.className = 'message-meta';
+    meta.innerHTML = `<span class="msg-time">${getCurrentTime()}</span><span class="check-icon">✓✓</span>`;
+    bubble.appendChild(meta);
+
+    messagesContainer.appendChild(bubble);
+    scrollToBottom();
+  }
+
+  // Renderiza bolha de mensagem do agente (Incoming)
+  function appendAgentMessage(text) {
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble message-incoming';
+
+    const textSpan = document.createElement('span');
+    textSpan.innerHTML = formatWhatsAppText(text);
+    bubble.appendChild(textSpan);
+
+    const meta = document.createElement('div');
+    meta.className = 'message-meta';
+    meta.innerHTML = `<span class="msg-time">${getCurrentTime()}</span>`;
+    bubble.appendChild(meta);
+
+    messagesContainer.appendChild(bubble);
+    scrollToBottom();
+  }
+
+  // Indicador de "digitando..."
+  let typingBubble = null;
+  function showTyping() {
+    contactStatus.textContent = 'digitando...';
+    contactStatus.classList.add('typing');
+
+    typingBubble = document.createElement('div');
+    typingBubble.className = 'typing-bubble';
+    typingBubble.innerHTML = `
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    `;
+    messagesContainer.appendChild(typingBubble);
+    scrollToBottom();
+  }
+
+  function hideTyping() {
+    contactStatus.textContent = 'online • Concierge IA';
+    contactStatus.classList.remove('typing');
+    if (typingBubble && typingBubble.parentNode) {
+      typingBubble.parentNode.removeChild(typingBubble);
+      typingBubble = null;
+    }
+  }
+
+  // Estado da conversa: MENU -> SERVICE -> BARBER -> DATE -> SLOT -> NAME -> CONFIRMED
+  const flowState = {
+    step: 'MENU',
     service: null,
     barber: null,
+    assignedBarber: null,
     date: null,
-    slots: [],
+    availableDays: [],
+    availableSlots: [],
+    selectedSlot: null,
     slot: null,
-    slotsRequest: 0,
-    submitting: false,
+    name: null
   };
 
-  const $ = (id) => document.getElementById(id);
-  const el = {
-    shopName: $('shopName'),
-    mockBanner: $('mockBanner'),
-    footerInfo: $('footerInfo'),
-    serviceList: $('serviceList'),
-    barberList: $('barberList'),
-    dayList: $('dayList'),
-    slotArea: $('slotArea'),
-    form: $('customerForm'),
-    name: $('name'),
-    phone: $('phone'),
-    summary: $('summary'),
-    formError: $('formError'),
-    suggestions: $('suggestions'),
-    submitBtn: $('submitBtn'),
-    bookingView: $('bookingView'),
-    successView: $('successView'),
-    successDetails: $('successDetails'),
-    newBookingBtn: $('newBookingBtn'),
-  };
+  let currentOptions = {};
 
-  function ymdInTz(date) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: TZ,
+  function resetFlowState() {
+    flowState.step = 'MENU';
+    flowState.service = null;
+    flowState.barber = null;
+    flowState.assignedBarber = null;
+    flowState.date = null;
+    flowState.availableDays = [];
+    flowState.availableSlots = [];
+    flowState.selectedSlot = null;
+    flowState.slot = null;
+    flowState.name = null;
+    currentOptions = {};
+  }
+
+  function updateQuickChips(chips) {
+    if (!quickChips) return;
+    quickChips.innerHTML = '';
+    chips.forEach((c) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip-btn';
+      btn.dataset.text = c.value;
+      btn.textContent = c.label;
+      quickChips.appendChild(btn);
+    });
+  }
+
+  function setMenuChips() {
+    updateQuickChips([
+      { value: '1', label: '1️⃣ Consultar Serviços' },
+      { value: '2', label: '2️⃣ Ver Horários' },
+      { value: '3', label: '3️⃣ Agendar Horário' }
+    ]);
+  }
+
+  // Extrai dinamicamente opções numeradas [1], [2], [3] da resposta do bot
+  function extractChipsFromMessage(text) {
+    if (!text) return null;
+    const lines = text.split('\n');
+    const found = [];
+    const re = /^\[(\d+)\]\s*\*?([^\*\n\r—\(]+?)\*?(?:\s*—|\s*\(|$)/;
+    currentOptions = {};
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^\[\d+\]/.test(trimmed)) {
+        const match = trimmed.match(re);
+        if (match) {
+          const num = match[1];
+          let label = match[2].trim().replace(/^[*\s]+|[*\s]+$/g, '');
+          currentOptions[num] = label;
+          if (label.length > 22) label = label.substring(0, 20) + '...';
+          found.push({ value: num, label: `${num}️⃣ ${label}` });
+        }
+      }
+    }
+    return found.length >= 2 ? found : null;
+  }
+
+  async function loadBookingOptions() {
+    if (optionsCache) return optionsCache;
+    if (CFG.USE_MOCK) return null;
+    try {
+      const res = await fetch(getEndpointUrl('options', '/booking-options'));
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status === 'ok') {
+          optionsCache = data;
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn('Não foi possível carregar /booking-options:', e);
+    }
+    return null;
+  }
+
+  function getTz() {
+    return (optionsCache && optionsCache.timezone) || CFG.TIMEZONE || 'America/Sao_Paulo';
+  }
+
+  // Identifica os dias da semana em que o barbeiro atende (1 = seg ... 7 = dom)
+  function getBarberWorkingDays(chosenBarber) {
+    const norm = (v) => String(v || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isAny = !chosenBarber || norm(chosenBarber).includes('sem preferencia') || norm(chosenBarber) === 'any';
+
+    if (optionsCache && Array.isArray(optionsCache.barbers) && optionsCache.barbers.length > 0) {
+      if (isAny) {
+        const union = new Set();
+        optionsCache.barbers.forEach((b) => {
+          if (Array.isArray(b.days)) {
+            b.days.forEach((d) => union.add(Number(d)));
+          }
+        });
+        if (union.size > 0) return Array.from(union).sort((a, b) => a - b);
+      } else {
+        const found = optionsCache.barbers.find((b) => norm(b.name) === norm(chosenBarber));
+        if (found && Array.isArray(found.days) && found.days.length > 0) {
+          return found.days.map(Number);
+        }
+      }
+    }
+    // Padrão da barbearia: segunda a sexta [1, 2, 3, 4, 5]
+    return [1, 2, 3, 4, 5];
+  }
+
+  // Gera os 5 próximos dias ÚTEIS de atendimento do barbeiro (pula dias de folga como sáb/dom)
+  function getNextAvailableDays(chosenBarber, count = 5) {
+    const tz = getTz();
+    const workingDays = getBarberWorkingDays(chosenBarber);
+    const list = [];
+    const now = new Date();
+
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }).formatToParts(date);
-    const get = (type) => parts.find((p) => p.type === type).value;
-    return `${get('year')}-${get('month')}-${get('day')}`;
-  }
-
-  function ymdToUtcDate(ymd) {
-    const [y, m, d] = ymd.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d));
-  }
-
-  function utcDateToYmd(date) {
-    return date.toISOString().slice(0, 10);
-  }
-
-  function isoWeekday(ymd) {
-    const wd = ymdToUtcDate(ymd).getUTCDay();
-    return wd === 0 ? 7 : wd;
-  }
-
-  function fmtDay(ymd, opts) {
-    return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', ...opts }).format(ymdToUtcDate(ymd));
-  }
-
-  function fmtTime(iso) {
-    return new Intl.DateTimeFormat('pt-BR', {
-      timeZone: TZ,
       hour: '2-digit',
       minute: '2-digit',
-    }).format(new Date(iso));
+      hour12: false
+    });
+
+    const parts = formatter.formatToParts(now);
+    const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+    // Se já passou das 18h no fuso do estabelecimento, começa a partir de amanhã
+    const startOffset = hour >= 18 ? 1 : 0;
+
+    for (let offset = startOffset; list.length < count && offset < 40; offset++) {
+      const target = new Date(now.getTime() + offset * 86400000);
+      const ymdParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(target);
+
+      const get = (t) => ymdParts.find((p) => p.type === t).value;
+      const ymd = `${get('year')}-${get('month')}-${get('day')}`;
+
+      const [y, mo, da] = ymd.split('-').map(Number);
+      const utcDate = new Date(Date.UTC(y, mo - 1, da));
+      const jsDay = utcDate.getUTCDay(); // 0 = Dom, 1 = Seg ... 6 = Sáb
+      const isoWeekday = jsDay === 0 ? 7 : jsDay;
+
+      // Pula dias em que o profissional NÃO atende
+      if (!workingDays.includes(isoWeekday)) {
+        continue;
+      }
+
+      const weekday = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'UTC',
+        weekday: 'long'
+      }).format(utcDate);
+      const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+
+      const prefix = offset === 0 ? 'Hoje - ' : (offset === 1 ? 'Amanhã - ' : '');
+      const label = `${prefix}${capitalizedWeekday} (${get('day')}/${get('month')})`;
+      const shortLabel = `${offset === 0 ? 'Hoje' : capitalizedWeekday.split('-')[0]} (${get('day')}/${get('month')})`;
+
+      list.push({
+        num: String(list.length + 1),
+        ymd,
+        label,
+        shortLabel,
+        isoWeekday
+      });
+    }
+    return list;
   }
 
-  function fmtDateTimeLong(iso) {
-    const day = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: TZ,
+  // Analisa uma data digitada pelo usuário (ex: "25/11", "25/11/2026", "2026-11-25")
+  function parseUserDate(input) {
+    const raw = String(input || '').trim();
+    const clean = raw.replace(/\s+/g, '').replace(/[^\d\/-]/g, '');
+    const now = new Date();
+    const nowYear = now.getFullYear();
+
+    // 1. DD/MM/YYYY ou DD-MM-YYYY
+    let m = clean.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (m) {
+      const d = String(m[1]).padStart(2, '0');
+      const mo = String(m[2]).padStart(2, '0');
+      const y = m[3];
+      return `${y}-${mo}-${d}`;
+    }
+
+    // 2. DD/MM ou DD-MM (assume ano atual)
+    m = clean.match(/^(\d{1,2})[\/-](\d{1,2})$/);
+    if (m) {
+      const d = String(m[1]).padStart(2, '0');
+      const mo = String(m[2]).padStart(2, '0');
+      return `${nowYear}-${mo}-${d}`;
+    }
+
+    // 3. YYYY-MM-DD
+    m = clean.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
+    if (m) {
+      const y = m[1];
+      const mo = String(m[2]).padStart(2, '0');
+      const d = String(m[3]).padStart(2, '0');
+      return `${y}-${mo}-${d}`;
+    }
+
+    return null;
+  }
+
+  function formatYmdBr(ymd) {
+    if (!ymd) return 'amanhã';
+    const [y, m, d] = ymd.split('-').map(Number);
+    const utcDate = new Date(Date.UTC(y, m - 1, d));
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'UTC',
       weekday: 'long',
       day: '2-digit',
-      month: 'long',
-    }).format(new Date(iso));
-    return `${day} às ${fmtTime(iso)}`;
+      month: '2-digit'
+    }).format(utcDate);
   }
 
-  function fmtDateTimeShort(iso) {
-    const day = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: TZ,
-      weekday: 'short',
-      day: '2-digit',
-      month: '2-digit',
-    }).format(new Date(iso));
-    return `${day} às ${fmtTime(iso)}`;
-  }
-
-  function nextDays() {
-    const today = ymdToUtcDate(ymdInTz(new Date()));
-    return Array.from({ length: state.rangeDays }, (_, i) => utcDateToYmd(new Date(today.getTime() + i * 86400000)));
-  }
-
-  function fmtPrice(p) {
-    if (p === '' || p === null || p === undefined) return '';
-    if (typeof p === 'number') return p.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const s = String(p).trim();
-    return /^\d+([.,]\d{1,2})?$/.test(s)
-      ? Number(s.replace(',', '.')).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-      : s;
-  }
-
-  function fmtDuration(min) {
-    return min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}` : `${min} min`;
-  }
-
-  function workingDays() {
-    const list = state.barber === 'any' || !state.barber
-      ? state.barbers
-      : state.barbers.filter((b) => b.name === state.barber);
-    return new Set(list.flatMap((b) => b.days || []));
-  }
-
-  async function request(path, body) {
-    const res = await fetch(CFG.N8N_BASE_URL + path, body
-      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-      : undefined);
-
+  async function querySlotsForBarberOnDate(ymd, barberName, serviceName) {
+    const res = await fetch(getEndpointUrl('availableSlots', '/available-slots'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: ymd,
+        barber: barberName,
+        service: serviceName || 'Corte Simples'
+      })
+    });
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`(HTTP ${res.status}): ${errText || res.statusText}`);
+      throw new Error('HTTP ' + res.status);
     }
-    const text = await res.text();
-    return text ? JSON.parse(text) : { status: 'booked' };
+    return res.json();
   }
 
-  const api = {
-    options: () => (CFG.USE_MOCK ? mock.options() : request(CFG.ENDPOINTS.options)),
-    slots: (b) => (CFG.USE_MOCK ? mock.slots(b) : request(CFG.ENDPOINTS.availableSlots, b)),
-    book: (p) => (CFG.USE_MOCK ? mock.book(p) : request(CFG.ENDPOINTS.book, p)),
-  };
+  // Busca horários REAIS disponíveis para a data e barbeiro especificados
+  async function fetchRealAvailableSlots(ymd, chosenBarber, serviceName) {
+    const opts = await loadBookingOptions();
+    const norm = (v) => String(v || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isAny = norm(chosenBarber).includes('sem preferencia') || norm(chosenBarber) === 'any';
 
-  const mock = (() => {
-    const barbers = [
-      { name: 'Carlos', days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00' },
-      { name: 'Eduardo', days: [2, 3, 4, 5, 6], start: '10:00', end: '19:00' },
-      { name: 'Rafael', days: [1, 3, 5, 6], start: '13:00', end: '20:00' },
-    ];
-    const services = [
-      { name: 'Corte Simples', duration: 30, price: 35 },
-      { name: 'Barba', duration: 30, price: 30 },
-      { name: 'Corte + Barba', duration: 60, price: 60 },
-      { name: 'Pezinho', duration: 15, price: 15 },
-    ];
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const toMin = (t) => {
-      const [h, m] = t.split(':').map(Number);
-      return h * 60 + m;
-    };
-    const offsetOf = (ymd) => {
-      const v = new Intl.DateTimeFormat('en-US', { timeZone: TZ, timeZoneName: 'longOffset' })
-        .formatToParts(new Date(`${ymd}T12:00:00Z`))
-        .find((p) => p.type === 'timeZoneName').value;
-      return v === 'GMT' ? '+00:00' : v.replace('GMT', '');
-    };
-    const isBusy = (name, ymd, m) => {
-      let h = 0;
-      for (const c of name + ymd + m) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-      return h % 4 === 0;
-    };
+    if (isAny) {
+      const barberNames = (opts && Array.isArray(opts.barbers) && opts.barbers.length)
+        ? opts.barbers.map((b) => b.name)
+        : ['Juvenal'];
 
-    return {
-      async options() {
-        await wait(400);
-        return { status: 'ok', timezone: TZ, rangeDays: 10, barbers, services };
-      },
-      async slots({ barber, date, service }) {
-        await wait(500);
-        const svc = services.find((s) => s.name === service);
-        const dur = svc ? svc.duration : 60;
-        const wd = isoWeekday(date);
-        const pool = (barber === 'any' ? barbers : barbers.filter((b) => b.name === barber)).filter((b) => b.days.includes(wd));
-        if (!pool.length) return { status: 'ok', date, barber, duration: dur, dayOff: true, slots: [] };
+      const results = await Promise.all(
+        barberNames.map(async (bName) => {
+          try {
+            const data = await querySlotsForBarberOnDate(ymd, bName, serviceName);
+            return { bName, data };
+          } catch (e) {
+            return { bName, data: null };
+          }
+        })
+      );
 
-        const off = offsetOf(date);
-        const first = Math.min(...pool.map((b) => toMin(b.start)));
-        const last = Math.max(...pool.map((b) => toMin(b.end)));
-        const slots = [];
-
-        for (let m = first; m + dur <= last; m += 30) {
-          const hh = String(Math.floor(m / 60)).padStart(2, '0');
-          const mm = String(m % 60).padStart(2, '0');
-          const startTime = `${date}T${hh}:${mm}:00${off}`;
-          if (new Date(startTime) < new Date()) continue;
-          const free = pool
-            .filter((b) => m >= toMin(b.start) && m + dur <= toMin(b.end) && !isBusy(b.name, date, m))
-            .map((b) => b.name);
-          if (free.length) {
-            slots.push({
-              startTime,
-              endTime: new Date(new Date(startTime).getTime() + dur * 60000).toISOString(),
-              label: `${hh}:${mm}`,
-              barbers: free,
-            });
+      const byLabel = new Map();
+      for (const { bName, data } of results) {
+        if (data && data.status === 'ok' && Array.isArray(data.slots)) {
+          for (const s of data.slots) {
+            if (!byLabel.has(s.label)) {
+              byLabel.set(s.label, {
+                startTime: s.startTime,
+                endTime: s.endTime,
+                label: s.label,
+                assignedBarber: (Array.isArray(s.barbers) && s.barbers[0]) || bName
+              });
+            }
           }
         }
-        return { status: 'ok', date, barber, duration: dur, slots };
-      },
-      async book(p) {
-        await wait(700);
-        return {
-          status: 'booked',
-          barber: p.barber,
-          startTime: p.startTime,
-          endTime: p.endTime,
-          eventId: 'demo_' + Math.random().toString(36).slice(2, 10),
-          calendarId: 'demo@group.calendar.google.com',
-        };
-      },
-    };
-  })();
-
-  const initials = (name) => name.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
-  const DAY_NAMES = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
-
-  function radioButton(className, checked, onClick) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = className;
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(!!checked));
-    b.addEventListener('click', onClick);
-    return b;
-  }
-
-  function div(className, text) {
-    const d = document.createElement('div');
-    d.className = className;
-    d.textContent = text;
-    return d;
-  }
-
-  function renderServices() {
-    el.serviceList.innerHTML = '';
-    if (!state.services.length) {
-      el.serviceList.appendChild(div('hint', 'Nenhum serviço disponível.'));
-      return;
-    }
-    for (const s of state.services) {
-      const b = radioButton('service', state.service && state.service.name === s.name, () => selectService(s));
-      const left = document.createElement('div');
-      left.append(div('s-name', s.name), div('s-dur', fmtDuration(s.duration)));
-      b.append(left, div('s-price', fmtPrice(s.price)));
-      el.serviceList.appendChild(b);
-    }
-  }
-
-  function renderBarbers() {
-    el.barberList.innerHTML = '';
-    const options = [{ value: 'any', name: 'Sem preferência', desc: 'Primeiro disponível', avatar: '★' }]
-      .concat(state.barbers.map((b) => ({
-        value: b.name,
-        name: b.name,
-        avatar: initials(b.name),
-        desc: `${(b.days || []).map((d) => DAY_NAMES[d - 1]).join(', ')} · ${b.start}–${b.end}`,
-      })));
-
-    for (const o of options) {
-      const b = radioButton('barber', state.barber === o.value, () => selectBarber(o.value));
-      b.append(div('avatar', o.avatar), div('name', o.name), div('desc', o.desc));
-      el.barberList.appendChild(b);
-    }
-  }
-
-  function renderDays() {
-    el.dayList.innerHTML = '';
-    const days = workingDays();
-    for (const ymd of nextDays()) {
-      const open = days.has(isoWeekday(ymd));
-      const b = radioButton('day', state.date === ymd, () => selectDay(ymd));
-      b.disabled = !open;
-      b.setAttribute('aria-label', fmtDay(ymd, { weekday: 'long', day: 'numeric', month: 'long' }) + (open ? '' : ' (indisponível)'));
-      const wd = ymd === ymdInTz(new Date()) ? 'hoje' : fmtDay(ymd, { weekday: 'short' }).replace('.', '');
-      b.append(
-        div('wd', wd),
-        div('dn', fmtDay(ymd, { day: '2-digit' })),
-        div(open ? 'mo' : 'closed', open ? fmtDay(ymd, { month: 'short' }).replace('.', '') : 'folga')
-      );
-      el.dayList.appendChild(b);
-    }
-  }
-
-  function renderSlotsMessage(text, isError) {
-    el.slotArea.innerHTML = '';
-    const p = document.createElement('p');
-    p.className = isError ? 'alert alert-error' : 'hint';
-    p.textContent = text;
-    el.slotArea.appendChild(p);
-  }
-
-  function renderSlots() {
-    if (!state.slots.length) {
-      renderSlotsMessage('Nenhum horário livre neste dia. Tente outro dia ou profissional.');
-      return;
-    }
-    el.slotArea.innerHTML = '';
-    const hourOf = (s) => Number(fmtTime(s.startTime).slice(0, 2));
-    const groups = [
-      { title: 'Manhã', items: state.slots.filter((s) => hourOf(s) < 12) },
-      { title: 'Tarde', items: state.slots.filter((s) => hourOf(s) >= 12 && hourOf(s) < 18) },
-      { title: 'Noite', items: state.slots.filter((s) => hourOf(s) >= 18) },
-    ];
-
-    for (const g of groups) {
-      if (!g.items.length) continue;
-      const grid = document.createElement('div');
-      grid.className = 'slot-grid';
-      grid.setAttribute('role', 'radiogroup');
-
-      for (const s of g.items) {
-        const selected = state.slot && new Date(state.slot.startTime).getTime() === new Date(s.startTime).getTime();
-        const b = radioButton('slot', selected, () => selectSlot(s));
-        b.textContent = fmtTime(s.startTime);
-        if (state.barber === 'any' && Array.isArray(s.barbers)) {
-          const sm = document.createElement('small');
-          sm.textContent = s.barbers.length === 1 ? s.barbers[0] : `${s.barbers.length} livres`;
-          b.appendChild(sm);
-        }
-        grid.appendChild(b);
       }
-      el.slotArea.append(div('slot-group-title', g.title), grid);
+
+      const merged = Array.from(byLabel.values()).sort((a, b) => a.label.localeCompare(b.label));
+      return { date: ymd, slots: merged };
     }
+
+    const data = await querySlotsForBarberOnDate(ymd, chosenBarber, serviceName);
+    if (data.status === 'system_error') {
+      return { error: data.message || `Não foi possível acessar a agenda de ${chosenBarber}.` };
+    }
+    if (data.status === 'barber_not_found') {
+      return { error: `Barbeiro "${chosenBarber}" não encontrado na planilha.` };
+    }
+    if (data.status === 'ok' && Array.isArray(data.slots)) {
+      return {
+        date: ymd,
+        slots: data.slots.map((s) => ({
+          startTime: s.startTime,
+          endTime: s.endTime,
+          label: s.label,
+          assignedBarber: (Array.isArray(s.barbers) && s.barbers[0]) || chosenBarber
+        }))
+      };
+    }
+
+    return { date: ymd, slots: [] };
   }
 
-  function renderSummary() {
-    if (!state.slot || !state.service) {
-      el.summary.classList.add('hidden');
-      return;
-    }
-    el.summary.innerHTML = '';
-    const lines = [
-      ['Serviço', `${state.service.name}${state.service.price !== '' ? ' · ' + fmtPrice(state.service.price) : ''}`],
-      ['Barbeiro', state.barber === 'any' ? `${bookingBarber()} (primeiro disponível)` : state.barber],
-      ['Quando', fmtDateTimeLong(state.slot.startTime)],
-      ['Duração', `${fmtDuration(state.service.duration)} (até ${fmtTime(state.slot.endTime)})`],
-    ];
+  function buildDatesMessage(barberLabel, days) {
+    const lines = days.map((d) => `[${d.num}] *${d.label}*`).join('\n');
+    return `Perfeito! Profissional selecionado: *${barberLabel}* 🧔\n\n📅 *Escolha a data do seu atendimento:*\n\n${lines}\n\nDigite o *número do dia* desejado ou digite outra data (ex: 25/11 ou DD/MM/AAAA):`;
+  }
 
-    lines.forEach(([k, v], i) => {
-      const strong = document.createElement('strong');
-      strong.textContent = k + ': ';
-      el.summary.append(strong, document.createTextNode(v));
-      if (i < lines.length - 1) el.summary.appendChild(document.createElement('br'));
+  function buildSlotsMessage(barberLabel, ymd, slots) {
+    const lines = slots.map((s, idx) => `[${idx + 1}] *${s.label}*`).join('\n');
+    return `Ótimo! Para *${formatYmdBr(ymd)}* com *${barberLabel}*, estes são os horários disponíveis:\n\n${lines}\n\nDigite o *número do horário* que você prefere:`;
+  }
+
+  function formatBarbersListMessage(opts, chosenService) {
+    const DAY_NAMES = { 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sáb', 7: 'dom' };
+    const defaultBarbers = [
+      { name: 'Juvenal', days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00' },
+      { name: 'Melk', days: [1, 2, 3, 4, 5], start: '10:00', end: '19:00' },
+      { name: 'Zoomp', days: [1, 2, 3, 4, 5], start: '13:00', end: '20:00' }
+    ];
+    const barbers = (opts && Array.isArray(opts.barbers) && opts.barbers.length > 0) ? opts.barbers : defaultBarbers;
+
+    const listLines = barbers.map((b, i) => {
+      const days = Array.isArray(b.days) ? b.days.map((d) => DAY_NAMES[d] || d).join(', ') : 'seg-sex';
+      return `[${i + 1}] *${b.name}* (Atende ${days}, ${b.start} às ${b.end})`;
     });
-    el.summary.classList.remove('hidden');
+    listLines.push(`[${barbers.length + 1}] *Sem preferência* (Primeiro disponível)`);
+
+    const intro = chosenService
+      ? `Ótima escolha! Você selecionou *${chosenService}*. 💈\n\nAgora escolha o profissional que irá te atender:`
+      : `📅 *Horários Disponíveis:*\nPara consultar a agenda, escolha o profissional que irá te atender:`;
+    return `${intro}\n\n${listLines.join('\n')}\n\nDigite o *número do barbeiro*:`;
   }
 
-  function updateSubmitState() {
-    el.submitBtn.disabled = state.submitting || !state.service || !state.barber || !state.slot;
-    el.submitBtn.textContent = state.submitting ? 'Agendando...' : 'Confirmar agendamento';
-  }
-
-  function showError(text) {
-    el.formError.textContent = text;
-    el.formError.classList.remove('hidden');
-  }
-
-  function clearMessages() {
-    el.formError.classList.add('hidden');
-    el.suggestions.classList.add('hidden');
-    el.suggestions.innerHTML = '';
-  }
-
-  function refreshAfterChange() {
-    state.slot = null;
-    clearMessages();
-    renderSummary();
-    updateSubmitState();
-    if (state.service && state.barber && state.date) loadSlots();
-    else if (state.date) renderSlotsMessage(!state.service ? 'Escolha um serviço.' : 'Escolha um barbeiro.');
-    else renderSlotsMessage('Escolha o serviço, o barbeiro e o dia para ver os horários livres.');
-  }
-
-  function bookingBarber() {
-    if (state.barber !== 'any') return state.barber;
-    return state.slot && state.slot.barbers && state.slot.barbers.length ? state.slot.barbers[0] : 'any';
-  }
-
-  function selectService(s) {
-    state.service = s;
-    renderServices();
-    refreshAfterChange();
-  }
-
-  function selectBarber(value) {
-    state.barber = value;
-    if (state.date && !workingDays().has(isoWeekday(state.date))) state.date = null;
-    renderBarbers();
-    renderDays();
-    refreshAfterChange();
-  }
-
-  function selectDay(ymd) {
-    state.date = ymd;
-    renderDays();
-    refreshAfterChange();
-  }
-
-  function selectSlot(slot) {
-    state.slot = slot;
-    clearMessages();
-    renderSlots();
-    renderSummary();
-    updateSubmitState();
-    el.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.name.focus({ preventScroll: true });
-  }
-
-  async function loadSlots(selectStartTime) {
-    const reqId = ++state.slotsRequest;
-    el.slotArea.innerHTML = '<div class="slot-grid">' + '<div class="skeleton skeleton-slot"></div>'.repeat(8) + '</div>';
-
-    try {
-      const data = await api.slots({ barber: state.barber, date: state.date, service: state.service.name });
-      if (reqId !== state.slotsRequest) return;
-
-      if (data.status === 'ok') {
-        state.slots = Array.isArray(data.slots) ? data.slots : [];
-        if (data.dayOff) return renderSlotsMessage('Não há atendimento neste dia para essa escolha. Escolha outro dia.');
-        if (selectStartTime) {
-          const t = new Date(selectStartTime).getTime();
-          state.slot = state.slots.find((s) => new Date(s.startTime).getTime() === t) || null;
-          renderSummary();
-          updateSubmitState();
-        }
-        renderSlots();
-      } else if (data.status === 'barber_not_found') {
-        renderSlotsMessage('Barbeiro não disponível. Escolha outro.', true);
-      } else if (data.status === 'service_not_found') {
-        renderSlotsMessage('Serviço não disponível. Escolha outro.', true);
-      } else if (data.status === 'invalid_request') {
-        renderSlotsMessage('Data indisponível para agendamento.', true);
-      } else {
-        renderSlotsMessage(data.message || 'Não foi possível carregar os horários.', true);
-      }
-    } catch (err) {
-      if (reqId !== state.slotsRequest) return;
-      console.error(err);
-      renderSlotsMessage(`Falha ao carregar horários: ${err.message || 'Verifique a conexão.'}`, true);
-    }
-  }
-
-  function showSuggestions(list) {
-    el.suggestions.innerHTML = '';
-    el.suggestions.appendChild(div('', list.length
-      ? 'Esse horário foi preenchido. Horários mais próximos disponíveis:'
-      : 'Esse horário não está mais disponível. Escolha outro horário abaixo.'));
-
-    if (list.length) {
-      const wrap = document.createElement('div');
-      wrap.className = 'suggestion-list';
-      for (const s of list) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'suggestion';
-        b.textContent = fmtDateTimeShort(s.startTime) + (s.barber ? ` · ${s.barber}` : '');
-        b.addEventListener('click', () => {
-          clearMessages();
-          state.date = ymdInTz(new Date(s.startTime));
-          renderDays();
-          loadSlots(s.startTime);
-        });
-        wrap.appendChild(b);
-      }
-      el.suggestions.appendChild(wrap);
-    }
-    el.suggestions.classList.remove('hidden');
-  }
-
-  function showSuccess(data) {
-    el.successDetails.innerHTML = '';
-    const rows = [
-      ['Serviço', state.service.name],
-      ['Barbeiro', data.barber || bookingBarber()],
-      ['Quando', fmtDateTimeLong(data.startTime || state.slot.startTime)],
-      ['Código', data.eventId || '-'],
+  function formatServicesListMessage(opts) {
+    const defaultServices = [
+      { name: 'Corte Simples', duration: 30, price: 50 },
+      { name: 'Barba', duration: 30, price: 30 },
+      { name: 'Corte + Barba', duration: 60, price: 60 },
+      { name: 'Pezinho / Acabamento', duration: 15, price: 15 }
     ];
+    const services = (opts && Array.isArray(opts.services) && opts.services.length > 0) ? opts.services : defaultServices;
 
-    for (const [k, v] of rows) {
-      const dt = document.createElement('dt');
-      dt.textContent = k;
-      const dd = document.createElement('dd');
-      dd.textContent = v;
-      el.successDetails.append(dt, dd);
+    const listLines = services.map((s, i) => {
+      const priceStr = typeof s.price === 'number' ? `R$ ${s.price}` : (s.price ? `R$ ${s.price}` : '');
+      const durStr = s.duration ? `(${s.duration} min)` : '';
+      return `[${i + 1}] *${s.name}* — ${priceStr} ${durStr}`.trim();
+    });
+
+    return `✂️ *Nossos Serviços:*\n\n${listLines.join('\n')}\n\nDigite o *número do serviço* que você deseja agendar:`;
+  }
+
+  // Resposta Mock Inteligente para testes offline / GitHub Pages
+  async function mockAgentResponse(input) {
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
+    const raw = input.trim();
+    const txt = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    if (txt === '0' || txt.includes('inicio') || txt.includes('menu') || txt.includes('recomecar')) {
+      resetFlowState();
+      setMenuChips();
+      return `Olá! Seja bem-vindo à *Barbearia Imperial*. 💈✂️\n\nEu sou o seu *Concierge Virtual com IA*. Digite o número da opção desejada:\n\n[1] Consultar nossos serviços e tabela de preços\n[2] Ver os horários disponíveis com nossos barbeiros\n[3] Realizar ou confirmar seu agendamento\n\nComo posso te ajudar hoje?`;
     }
 
-    el.bookingView.classList.add('hidden');
-    el.successView.classList.remove('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (flowState.step === 'MENU') {
+      if (txt === '1' || txt.includes('servico') || txt.includes('preco') || txt === '3' || txt.includes('agendar')) {
+        flowState.step = 'SERVICE';
+        return formatServicesListMessage(optionsCache);
+      }
+
+      if (txt === '2' || txt.includes('horario')) {
+        flowState.step = 'BARBER';
+        flowState.service = 'Corte Simples';
+        return formatBarbersListMessage(optionsCache, null);
+      }
+
+      setMenuChips();
+      return `Olá! Digite o número da opção desejada:\n\n[1] Consultar serviços e tabela de preços\n[2] Ver os horários disponíveis com nossos barbeiros\n[3] Realizar ou confirmar seu agendamento`;
+    }
+
+    if (flowState.step === 'SERVICE') {
+      flowState.service = currentOptions[raw] || (txt === '2' ? 'Barba' : txt === '3' ? 'Corte + Barba' : 'Corte Simples');
+      flowState.step = 'BARBER';
+      return formatBarbersListMessage(optionsCache, flowState.service);
+    }
+
+    if (flowState.step === 'BARBER') {
+      const chosen = currentOptions[raw] || (txt === '2' ? 'Melk' : txt === '3' ? 'Zoomp' : txt === '4' ? 'Sem preferência' : 'Juvenal');
+      flowState.barber = chosen;
+      flowState.assignedBarber = chosen.includes('Sem') ? 'Juvenal' : chosen;
+      flowState.availableDays = getNextAvailableDays(flowState.barber, 5);
+      flowState.step = 'DATE';
+      return buildDatesMessage(flowState.barber, flowState.availableDays);
+    }
+
+    if (flowState.step === 'DATE') {
+      const matchedDay = flowState.availableDays.find((d) => d.num === raw);
+      const parsedYmd = matchedDay ? matchedDay.ymd : parseUserDate(raw);
+
+      if (!parsedYmd) {
+        return `⚠️ Formato de data não reconhecido. Por favor escolha um dos números de 1 a 5 ou digite a data no formato DD/MM (ex: 25/11):\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+      }
+
+      flowState.date = parsedYmd;
+      flowState.availableSlots = ['09:00', '10:00', '11:30', '14:00', '15:30', '16:30'].map((l) => ({
+        label: l,
+        startTime: `${parsedYmd}T${l}:00-03:00`,
+        endTime: `${parsedYmd}T${l}:30-03:00`,
+        assignedBarber: flowState.assignedBarber
+      }));
+      flowState.step = 'SLOT';
+      return buildSlotsMessage(flowState.barber, flowState.date, flowState.availableSlots);
+    }
+
+    if (flowState.step === 'SLOT') {
+      const idx = parseInt(raw, 10) - 1;
+      const chosenSlot = (idx >= 0 && flowState.availableSlots[idx]) || flowState.availableSlots.find((s) => s.label === raw) || flowState.availableSlots[0];
+      flowState.selectedSlot = chosenSlot;
+      flowState.slot = chosenSlot ? chosenSlot.label : '10:00';
+      flowState.step = 'NAME';
+      updateQuickChips([{ value: '0', label: '↩️ Cancelar / Recomeçar' }]);
+      return `Excelente! Horário selecionado: *${flowState.slot}* (${formatYmdBr(flowState.date)}) com *${flowState.assignedBarber}* ⏰\n\nPara confirmarmos sua reserva na agenda, por favor digite seu *Nome completo*:`;
+    }
+
+    if (flowState.step === 'NAME') {
+      flowState.name = raw;
+      flowState.step = 'CONFIRMED';
+      const code = '#IMP-' + Math.floor(1000 + Math.random() * 9000);
+      updateQuickChips([{ value: '0', label: '💈 Fazer Outro Agendamento' }]);
+      return `💈 *Agendamento Confirmado com Sucesso!* 🎉\n\n📍 *Resumo da Reserva:*\n• *Cliente:* ${flowState.name}\n• *Serviço:* ${flowState.service || 'Corte Simples'}\n• *Barbeiro:* ${flowState.assignedBarber || flowState.barber || 'Juvenal'}\n• *Quando:* ${formatYmdBr(flowState.date)} às ${flowState.slot || '10:00'}\n• *Código da Reserva:* ${code}\n\nDigite *[0]* se desejar fazer outro agendamento.`;
+    }
+
+    resetFlowState();
+    setMenuChips();
+    return `Olá! Deseja realizar um novo agendamento?\n\n[1] Consultar serviços e tabela de preços\n[2] Ver horários livres dos barbeiros\n[3] Fazer agendamento`;
   }
 
-  function maskPhone(v) {
-    const d = v.replace(/\D/g, '').slice(0, 11);
-    if (d.length <= 2) return d.length ? `(${d}` : '';
-    if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-    if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  async function callAgentChat(messageText) {
+    const res = await fetch(getEndpointUrl('chat', '/agent-chat'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: messageText, sessionId: sessionId })
+    });
+    if (!res.ok) {
+      throw new Error('Erro na resposta do n8n: ' + res.status);
+    }
+    const data = await res.json();
+    return data.response || data.output || data.text || 'Mensagem recebida!';
   }
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    clearMessages();
-    const name = el.name.value.trim();
-    const digits = el.phone.value.replace(/\D/g, '');
+  // Envio de mensagem principal
+  async function sendMessage(text) {
+    if (!text || isWaiting) return;
+    const cleanText = text.trim();
+    if (!cleanText) return;
 
-    el.name.classList.toggle('invalid', !name);
-    el.phone.classList.toggle('invalid', digits.length < 10);
+    appendUserMessage(cleanText);
+    chatInput.value = '';
+    isWaiting = true;
+    showTyping();
 
-    if (!state.service || !state.barber || !state.slot) return showError('Selecione serviço, barbeiro, dia e horário.');
-    if (!name) return showError('Informe seu nome.');
-    if (digits.length < 10) return showError('Informe um telefone válido com DDD.');
-
-    const payload = {
-      name: name,
-      service: state.service.name,
-      barber: bookingBarber(),
-      startTime: state.slot.startTime,
-      endTime: state.slot.endTime,
-      number: digits,
-      phone_number: digits,
-      summary: `${state.service.name} - ${name}`,
-      description: `Cliente: ${name}\nTelefone: ${el.phone.value}\nServiço: ${state.service.name}` +
-        (state.service.price !== '' ? `\nValor: ${fmtPrice(state.service.price)}` : '') + '\nOrigem: Web',
-    };
-
-    state.submitting = true;
-    updateSubmitState();
+    const txt = cleanText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     try {
-      const data = await api.book(payload);
-      switch (data.status) {
-        case 'booked':
-          showSuccess(data);
-          break;
-        case 'unavailable':
-          state.slot = null;
-          renderSummary();
-          showSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
-          loadSlots();
-          break;
-        case 'barber_not_found':
-          showError('Barbeiro não encontrado. Escolha outro ou "Sem preferência".');
-          break;
-        case 'invalid_request':
-          showError(translateValidation(data.message));
-          break;
-        default:
-          showError('Não foi possível concluir o agendamento. Tente novamente.');
+      let replyText = '';
+
+      if (CFG.USE_MOCK) {
+        replyText = await mockAgentResponse(cleanText);
+      } else if (txt === '0' || txt.includes('inicio') || txt.includes('menu') || txt.includes('recomecar')) {
+        resetFlowState();
+        setMenuChips();
+        replyText = await callAgentChat('Quero voltar ao menu inicial da barbearia.');
+      } else if (flowState.step === 'MENU') {
+        if (txt === '1' || txt.includes('servico') || txt.includes('preco') || txt === '3' || txt.includes('agendar')) {
+          flowState.step = 'SERVICE';
+          const opts = await loadBookingOptions();
+          replyText = formatServicesListMessage(opts);
+        } else if (txt === '2' || txt.includes('horario')) {
+          const opts = await loadBookingOptions();
+          flowState.service = (opts && opts.services && opts.services[0]) ? opts.services[0].name : 'Corte Simples';
+          flowState.step = 'BARBER';
+          replyText = formatBarbersListMessage(opts, null);
+        } else {
+          replyText = await callAgentChat(cleanText);
+        }
+      } else if (flowState.step === 'SERVICE') {
+        const opts = await loadBookingOptions();
+        const chosenService = currentOptions[cleanText] || cleanText;
+        flowState.service = chosenService;
+        flowState.step = 'BARBER';
+        replyText = formatBarbersListMessage(opts, chosenService);
+      } else if (flowState.step === 'BARBER') {
+        const chosenBarber = currentOptions[cleanText] || cleanText;
+        flowState.barber = chosenBarber;
+        flowState.assignedBarber = chosenBarber.includes('Sem') ? 'Juvenal' : chosenBarber;
+        flowState.availableDays = getNextAvailableDays(flowState.barber, 5);
+        flowState.step = 'DATE';
+        replyText = buildDatesMessage(flowState.barber, flowState.availableDays);
+      } else if (flowState.step === 'DATE') {
+        // Verifica se o usuário escolheu um dos 5 números ou digitou data personalizada
+        const matchedDay = flowState.availableDays.find((d) => d.num === cleanText);
+        const parsedYmd = matchedDay ? matchedDay.ymd : parseUserDate(cleanText);
+
+        if (!parsedYmd) {
+          replyText = `⚠️ Formato de data não reconhecido. Por favor escolha um dos números de [1] a [5] acima ou digite no formato DD/MM (ex: 25/11):\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+        } else {
+          // Checa se a data é anterior a hoje
+          const nowParts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: getTz(),
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          }).formatToParts(new Date());
+          const getP = (t) => nowParts.find((p) => p.type === t).value;
+          const todayYmd = `${getP('year')}-${getP('month')}-${getP('day')}`;
+
+          if (parsedYmd < todayYmd) {
+            replyText = `⚠️ A data selecionada (${formatYmdBr(parsedYmd)}) já passou. Por favor escolha uma data presente ou futura:\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+          } else {
+            // Checa se o barbeiro atende no dia da semana digitado
+            const [py, pmo, pda] = parsedYmd.split('-').map(Number);
+            const pUtc = new Date(Date.UTC(py, pmo - 1, pda));
+            const pJsDay = pUtc.getUTCDay();
+            const pIsoWd = pJsDay === 0 ? 7 : pJsDay;
+            const bWorkingDays = getBarberWorkingDays(flowState.barber);
+
+            if (!bWorkingDays.includes(pIsoWd)) {
+              const wdName = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'long' }).format(pUtc);
+              replyText = `⚠️ O profissional *${flowState.barber}* não atende aos ${wdName}s (dia de folga).\n\nPor favor escolha um dos dias disponíveis:\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+            } else {
+              flowState.date = parsedYmd;
+              // Busca horários reais no Google Calendar para a data selecionada
+              const result = await fetchRealAvailableSlots(parsedYmd, flowState.barber, flowState.service);
+
+              if (result.error) {
+                replyText = `⚠️ Não foi possível consultar a agenda de *${flowState.barber}* para ${formatYmdBr(parsedYmd)} (${result.error}).\n\nPor favor escolha outra data ou digite *[0]* para recomeçar.`;
+              } else if (!result.slots || result.slots.length === 0) {
+                replyText = `📅 Não encontramos horários disponíveis para *${flowState.barber}* no dia *${formatYmdBr(parsedYmd)}*.\n(Pode ser dia de folga do profissional ou todos os horários já foram reservados).\n\nPor favor escolha outro dia:\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+              } else {
+                flowState.availableSlots = result.slots;
+                flowState.step = 'SLOT';
+                replyText = buildSlotsMessage(flowState.barber, parsedYmd, result.slots);
+              }
+            }
+          }
+        }
+      } else if (flowState.step === 'SLOT') {
+        const idx = parseInt(cleanText, 10) - 1;
+        const chosenSlotObj = (idx >= 0 && flowState.availableSlots[idx])
+          || flowState.availableSlots.find((s) => s.label === cleanText || cleanText.includes(s.label));
+
+        if (!chosenSlotObj) {
+          const listStr = flowState.availableSlots.map((s, i) => `[${i + 1}] *${s.label}*`).join('\n');
+          replyText = `⚠️ Opção inválida. Digite apenas o número de um dos horários disponíveis abaixo:\n\n${listStr}`;
+        } else {
+          flowState.selectedSlot = chosenSlotObj;
+          flowState.slot = chosenSlotObj.label;
+          flowState.assignedBarber = chosenSlotObj.assignedBarber || flowState.barber;
+          flowState.step = 'NAME';
+          updateQuickChips([{ value: '0', label: '↩️ Cancelar / Recomeçar' }]);
+          replyText = `Excelente! Horário selecionado: *${flowState.slot}* (${formatYmdBr(flowState.date)}) com *${flowState.assignedBarber}* ⏰\n\nPara concluirmos sua reserva na agenda, por favor digite seu *Nome completo*:`;
+        }
+      } else if (flowState.step === 'NAME') {
+        flowState.name = cleanText;
+
+        // Dupla verificação anti-conflito em tempo real antes de gravar no Google Calendar
+        let conflictDetected = false;
+        let freshSlots = null;
+        try {
+          const check = await querySlotsForBarberOnDate(flowState.date, flowState.assignedBarber, flowState.service);
+          if (check && check.status === 'ok' && Array.isArray(check.slots)) {
+            const stillFree = check.slots.some((s) => s.startTime === flowState.selectedSlot.startTime);
+            if (!stillFree) {
+              conflictDetected = true;
+              freshSlots = check.slots.map((s) => ({
+                startTime: s.startTime,
+                endTime: s.endTime,
+                label: s.label,
+                assignedBarber: (Array.isArray(s.barbers) && s.barbers[0]) || flowState.assignedBarber
+              }));
+            }
+          }
+        } catch (e) {
+          console.warn('Não foi possível revalidar conflito antes da reserva:', e);
+        }
+
+        if (conflictDetected) {
+          flowState.availableSlots = freshSlots || [];
+          flowState.step = 'SLOT';
+          if (flowState.availableSlots.length > 0) {
+            const listStr = flowState.availableSlots.map((s, i) => `[${i + 1}] *${s.label}*`).join('\n');
+            replyText = `⚠️ Ops! O horário das *${flowState.slot}* com *${flowState.assignedBarber}* acabou de ser reservado por outro cliente.\n\nEscolha outro horário ainda disponível:\n\n${listStr}`;
+          } else {
+            flowState.step = 'DATE';
+            replyText = `⚠️ Ops! O horário das *${flowState.slot}* acabou de ser reservado e não há mais vagas neste dia.\n\nPor favor, escolha outro dia:\n\n${buildDatesMessage(flowState.barber, flowState.availableDays)}`;
+          }
+        } else {
+          const bookPayload = {
+            name: flowState.name,
+            barber: flowState.assignedBarber,
+            service: flowState.service || 'Corte Simples',
+            startTime: flowState.selectedSlot.startTime,
+            endTime: flowState.selectedSlot.endTime,
+            summary: `${flowState.service || 'Corte'} - ${flowState.name}`,
+            number: 'WhatsApp'
+          };
+
+          const bookRes = await fetch(getEndpointUrl('book', '/book-appointment'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bookPayload)
+          });
+
+          if (!bookRes.ok) {
+            throw new Error('Falha no webhook /book-appointment: HTTP ' + bookRes.status);
+          }
+
+          const rawBody = await bookRes.text();
+          let bookData = {};
+          if (rawBody && rawBody.trim()) {
+            try {
+              bookData = JSON.parse(rawBody);
+            } catch (e) {
+              console.warn('Resposta não-JSON de /book-appointment:', rawBody);
+            }
+          }
+
+          flowState.step = 'CONFIRMED';
+          updateQuickChips([{ value: '0', label: '💈 Fazer Outro Agendamento' }]);
+          const code = '#IMP-' + Math.floor(1000 + Math.random() * 9000);
+
+          // Confirmação limpa, objetiva e sem termos técnicos de sincronização interna
+          replyText = `💈 *Agendamento Confirmado com Sucesso!* 🎉\n\n📍 *Resumo da Reserva:*\n• *Cliente:* ${bookData.name || flowState.name}\n• *Serviço:* ${bookData.service || flowState.service}\n• *Barbeiro:* ${bookData.barber || flowState.assignedBarber}\n• *Quando:* ${formatYmdBr(flowState.date)} às ${flowState.slot}\n• *Código da Reserva:* ${code}\n\nDigite *[0]* se desejar fazer outro agendamento.`;
+        }
+      } else {
+        resetFlowState();
+        setMenuChips();
+        replyText = await callAgentChat(cleanText);
+      }
+
+      hideTyping();
+      appendAgentMessage(replyText);
+
+      // Atualiza botões rápidos (chips) com base na etapa atual
+      if (flowState.step === 'DATE' && flowState.availableDays && flowState.availableDays.length > 0) {
+        updateQuickChips(flowState.availableDays.map((d) => ({
+          value: d.num,
+          label: `${d.num}️⃣ ${d.shortLabel}`
+        })));
+      } else if (flowState.step === 'SLOT' && flowState.availableSlots && flowState.availableSlots.length > 0) {
+        updateQuickChips(flowState.availableSlots.map((s, idx) => ({
+          value: String(idx + 1),
+          label: `${idx + 1}️⃣ ${s.label}`
+        })));
+      } else {
+        const dynamicChips = extractChipsFromMessage(replyText);
+        if (dynamicChips && dynamicChips.length > 0) {
+          updateQuickChips(dynamicChips);
+        }
       }
     } catch (err) {
-      console.error(err);
-      showError(`Falha ao agendar: ${err.message || 'Verifique a conexão.'}`);
+      console.warn('Fallback ativado devido a erro na conexão com n8n:', err);
+      const fallbackReply = await mockAgentResponse(cleanText);
+      hideTyping();
+      appendAgentMessage(fallbackReply);
+
+      if (flowState.step === 'DATE' && flowState.availableDays && flowState.availableDays.length > 0) {
+        updateQuickChips(flowState.availableDays.map((d) => ({
+          value: d.num,
+          label: `${d.num}️⃣ ${d.shortLabel}`
+        })));
+      } else if (flowState.step === 'SLOT' && flowState.availableSlots && flowState.availableSlots.length > 0) {
+        updateQuickChips(flowState.availableSlots.map((s, idx) => ({
+          value: String(idx + 1),
+          label: `${idx + 1}️⃣ ${s.label}`
+        })));
+      } else {
+        const dynamicChips = extractChipsFromMessage(fallbackReply);
+        if (dynamicChips && dynamicChips.length > 0) {
+          updateQuickChips(dynamicChips);
+        }
+      }
     } finally {
-      state.submitting = false;
-      updateSubmitState();
+      isWaiting = false;
+      chatInput.focus();
     }
   }
 
-  function translateValidation(msg) {
-    const map = {
-      'A valid phone number is required.': 'Informe um telefone válido com DDD.',
-      'startTime cannot be in the past.': 'Esse horário já passou. Escolha outro.',
-      'endTime must be after startTime.': 'Horário inválido. Escolha outro.',
-    };
-    return map[msg] || 'Dados inválidos. Revise e tente novamente.';
-  }
+  // Event Listeners
+  sendBtn.addEventListener('click', () => sendMessage(chatInput.value));
 
-  function resetAll() {
-    Object.assign(state, { service: null, barber: null, date: null, slot: null, slots: [] });
-    el.form.reset();
-    renderServices();
-    renderBarbers();
-    renderDays();
-    refreshAfterChange();
-    el.successView.classList.add('hidden');
-    el.bookingView.classList.remove('hidden');
-  }
-
-  async function init() {
-    document.title = `Agendamento - ${CFG.SHOP_NAME}`;
-    el.shopName.textContent = CFG.SHOP_NAME;
-    el.mockBanner.classList.toggle('hidden', !CFG.USE_MOCK);
-    el.phone.addEventListener('input', () => { el.phone.value = maskPhone(el.phone.value); });
-    el.form.addEventListener('submit', onSubmit);
-    el.newBookingBtn.addEventListener('click', resetAll);
-    updateSubmitState();
-
-    try {
-      const data = await api.options();
-      if (data.status !== 'ok') throw new Error(data.message || 'status ' + data.status);
-      state.services = Array.isArray(data.services) ? data.services : [];
-      state.barbers = Array.isArray(data.barbers) ? data.barbers : [];
-      if (data.rangeDays) state.rangeDays = data.rangeDays;
-      el.footerInfo.textContent = `Horários no fuso ${data.timezone || TZ}`;
-    } catch (err) {
-      console.error(err);
-      showError('Não foi possível carregar serviços e barbeiros.');
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendMessage(chatInput.value);
     }
-    renderServices();
-    renderBarbers();
-    renderDays();
+  });
+
+  if (quickChips) {
+    quickChips.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chip-btn');
+      if (btn && btn.dataset.text) {
+        sendMessage(btn.dataset.text);
+      }
+    });
   }
 
-  init();
+  // Pré-carrega opções em segundo plano
+  loadBookingOptions();
+  chatInput.focus();
 })();

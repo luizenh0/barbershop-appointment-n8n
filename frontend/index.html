@@ -1,86 +1,84 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Barbearia • Atendente WhatsApp IA</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
-  <main class="app">
-    <header class="header">
-      <div class="logo" aria-hidden="true">✂</div>
-      <h1 id="shopName">Barbearia</h1>
-      <p class="subtitle">Agende seu horário em poucos passos</p>
+  <div class="chat-app">
+    <!-- Header estilo WhatsApp Web -->
+    <header class="chat-header">
+      <div class="header-left">
+        <div class="avatar-container">
+          <div class="avatar">💈</div>
+          <span class="online-badge" title="Online"></span>
+        </div>
+        <div class="contact-info">
+          <span class="contact-name">
+            Barbearia
+            <span class="verified-icon" title="Conta Comercial Verificada">✓</span>
+          </span>
+          <span id="contactStatus" class="contact-status">online • Concierge IA</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="status-pill">● Atendimento IA</span>
+      </div>
     </header>
 
-    <div id="mockBanner" class="banner hidden">
-      Modo demonstração: dados de exemplo, nada é gravado na agenda.
+    <!-- Área de Mensagens -->
+    <main id="chatMessages" class="chat-messages" aria-live="polite">
+      <!-- Badge de Segurança -->
+      <div class="system-badge security-badge">
+        🔒 As mensagens são protegidas e processadas pelo <strong>Agente Concierge IA (Gemini 1.5)</strong> integrado
+        via <strong>n8n</strong>.
+      </div>
+
+      <div class="system-badge">HOJE</div>
+
+      <!-- Mensagem Inicial do Agente -->
+      <div class="message-bubble message-incoming">
+        Olá! Seja bem-vindo à <strong>Barbearia </strong>. 💈✂️
+
+        Eu sou o seu <strong>Concierge Virtual com IA</strong>. Digite o número da opção desejada ou escreva sua
+        mensagem:
+
+        <strong>[1]</strong> Consultar nossos serviços e tabela de preços
+        <strong>[2]</strong> Ver os horários disponíveis com nossos barbeiros
+        <strong>[3]</strong> Realizar ou confirmar seu agendamento
+
+        Como posso te ajudar hoje?
+        <div class="message-meta">
+          <span class="msg-time">Agora</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Sugestões de Respostas Rápidas (Chips) -->
+    <div class="quick-chips-container" id="quickChips">
+      <button class="chip-btn" data-text="1">1️⃣ Ver Serviços & Preços</button>
+      <button class="chip-btn" data-text="2">2️⃣ Ver Horários Livres</button>
+      <button class="chip-btn" data-text="3">3️⃣ Fazer Agendamento</button>
     </div>
 
-    <section id="bookingView">
-      <div class="card">
-        <h2><span class="step">1</span> Escolha o serviço</h2>
-        <div id="serviceList" class="service-list" role="radiogroup" aria-label="Serviço">
-          <div class="skeleton skeleton-service"></div>
-          <div class="skeleton skeleton-service"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><span class="step">2</span> Escolha o barbeiro</h2>
-        <div id="barberList" class="barber-list" role="radiogroup" aria-label="Barbeiro">
-          <div class="skeleton skeleton-barber"></div>
-          <div class="skeleton skeleton-barber"></div>
-          <div class="skeleton skeleton-barber"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><span class="step">3</span> Escolha o dia</h2>
-        <div id="dayList" class="day-list" role="radiogroup" aria-label="Dia"></div>
-      </div>
-
-      <div class="card">
-        <h2><span class="step">4</span> Escolha o horário</h2>
-        <div id="slotArea">
-          <p class="hint">Escolha o serviço, o barbeiro e o dia para ver os horários livres.</p>
-        </div>
-      </div>
-
-      <form id="customerForm" class="card" novalidate>
-        <h2><span class="step">5</span> Seus dados</h2>
-        <label class="field">
-          <span>Nome</span>
-          <input id="name" type="text" autocomplete="name" placeholder="Seu nome" required />
-        </label>
-        <label class="field">
-          <span>Telefone (WhatsApp)</span>
-          <input id="phone" type="tel" autocomplete="tel" inputmode="numeric" placeholder="(11) 99999-9999" required />
-        </label>
-
-        <div id="summary" class="summary hidden"></div>
-        <div id="formError" class="alert alert-error hidden" role="alert"></div>
-        <div id="suggestions" class="alert alert-warn hidden" role="alert"></div>
-
-        <button id="submitBtn" type="submit" class="btn-primary" disabled>Confirmar agendamento</button>
-      </form>
-    </section>
-
-    <section id="successView" class="card success hidden" aria-live="polite">
-      <div class="success-icon">✓</div>
-      <h2>Agendamento confirmado!</h2>
-      <dl id="successDetails" class="details"></dl>
-      <p class="hint">Guarde o código do agendamento caso precise remarcar ou cancelar.</p>
-      <button id="newBookingBtn" type="button" class="btn-secondary">Fazer outro agendamento</button>
-    </section>
-
-    <footer class="footer" id="footerInfo"></footer>
-  </main>
+    <!-- Área de Input da Mensagem -->
+    <footer class="chat-input-area">
+      <input type="text" id="chatInput" class="chat-input" placeholder="Digite uma mensagem..." autocomplete="off"
+        maxlength="500" />
+      <button id="sendBtn" class="send-btn" aria-label="Enviar mensagem">
+        <svg viewBox="0 0 24 24">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+        </svg>
+      </button>
+    </footer>
+  </div>
 
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
+
 </html>

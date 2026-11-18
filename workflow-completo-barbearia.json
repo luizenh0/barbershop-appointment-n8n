@@ -34,7 +34,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Barbers"
+          "value": "barbers"
         },
         "documentId": {
           "__rl": true,
@@ -59,7 +59,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Servicos"
+          "value": "servicos"
         },
         "documentId": {
           "__rl": true,
@@ -81,7 +81,7 @@
         40
       ],
       "parameters": {
-        "jsCode": "const RULES = {\n  rangeDays: 10,\n  step: 30,\n  defaultDuration: 60,\n  defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00',\n  defaultEnd: '17:00',\n};\n\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nconst hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber ?? '').trim();\n    const calendarId = String(r.calendarId ?? '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico ?? '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst barbers = readBarbers($('Read Barbers Sheet').all())\n  .map(b => ({ name: b.barber, days: b.days, start: hhmm(b.start), end: hhmm(b.end) }));\nconst services = readServices($input.all());\nreturn [{ json: { status: 'ok', timezone: $now.zoneName, rangeDays: RULES.rangeDays, barbers, services } }];"
+        "jsCode": "const RULES = {\n  rangeDays: 10,\n  step: 30,\n  defaultDuration: 60,\n  defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00',\n  defaultEnd: '17:00',\n};\n\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nconst hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber || r.Barber || r.barbeiro || r.Barbeiro || r.nome || r.Nome || r.name || r.Name || '').trim();\n    const calendarId = String(r.calendarId || r.CalendarId || r.calendarid || r.email || r.Email || '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico || r.Servico || r.service || r.Service || r.nome || r.Nome || '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst barbers = readBarbers($('Read Barbers Sheet').all())\n  .map(b => ({ name: b.barber, days: b.days, start: hhmm(b.start), end: hhmm(b.end) }));\nconst services = readServices($input.all());\nreturn [{ json: { status: 'ok', timezone: 'America/Sao_Paulo', rangeDays: RULES.rangeDays, barbers, services } }];"
       }
     },
     {
@@ -143,7 +143,7 @@
         600
       ],
       "parameters": {
-        "jsCode": "const RULES = { rangeDays: 10, step: 30, defaultDuration: 60 };\nconst SHOP_TZ = $now.zoneName;\nconst body = $input.first().json.body || {};\nconst barber = String(body.barber || '').trim();\nconst service = String(body.service || '').trim();\nconst date = String(body.date || '').trim();\nconst today = $now.setZone(SHOP_TZ).startOf('day');\nconst day = DateTime.fromISO(date, { zone: SHOP_TZ });\n\nlet message = '';\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || !day.isValid) message = 'date must be YYYY-MM-DD.';\nelse if (day < today) message = 'date cannot be in the past.';\nelse if (day >= today.plus({ days: RULES.rangeDays })) message = 'date must be within ' + RULES.rangeDays + ' days.';\n\nreturn [{ json: {\n  valid: !message, message, barber, service, date, timezone: SHOP_TZ, rules: RULES,\n  weekday: day.isValid ? day.weekday : null,\n  dayStart: day.isValid ? day.startOf('day').toISO() : null,\n  dayEnd: day.isValid ? day.plus({ days: 1 }).startOf('day').toISO() : null,\n} }];"
+        "jsCode": "const RULES = { rangeDays: 30, step: 30, defaultDuration: 60 };\nconst SHOP_TZ = 'America/Sao_Paulo';\nconst body = $input.first().json.body || {};\nconst barber = String(body.barber || '').trim();\nconst service = String(body.service || '').trim();\nconst date = String(body.date || '').trim();\nconst today = $now.setZone(SHOP_TZ).startOf('day');\nconst day = DateTime.fromISO(date, { zone: SHOP_TZ });\n\nlet message = '';\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || !day.isValid) message = 'date must be YYYY-MM-DD.';\nelse if (day < today) message = 'date cannot be in the past.';\nelse if (day >= today.plus({ days: RULES.rangeDays })) message = 'date must be within ' + RULES.rangeDays + ' days.';\n\nreturn [{ json: {\n  valid: !message, message, barber, service, date, timezone: SHOP_TZ, rules: RULES,\n  weekday: day.isValid ? day.weekday : null,\n  dayStart: day.isValid ? day.startOf('day').toISO() : null,\n  dayEnd: day.isValid ? day.plus({ days: 1 }).startOf('day').toISO() : null,\n} }];"
       }
     },
     {
@@ -210,7 +210,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Barbers"
+          "value": "barbers"
         },
         "documentId": {
           "__rl": true,
@@ -235,7 +235,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Servicos"
+          "value": "servicos"
         },
         "documentId": {
           "__rl": true,
@@ -272,7 +272,7 @@
         440
       ],
       "parameters": {
-        "jsCode": "const RULES = {\n  rangeDays: 10, step: 30, defaultDuration: 60, defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00', defaultEnd: '17:00',\n};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber ?? '').trim();\n    const calendarId = String(r.calendarId ?? '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico ?? '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst req = $('Validate Slots Request').first().json;\nconst ANY = ['', 'any', 'no preference', 'none', 'no', 'sem preferencia'];\nconst isAny = ANY.includes(norm(req.barber));\n\nconst services = readServices($input.all());\nconst service = services.find(s => norm(s.name) === norm(req.service));\nconst stop = response => [{ json: { _stop: true, _response: response } }];\nif (req.service && !service) return stop({ status: 'service_not_found', message: 'Serviço não encontrado.' });\nconst duration = service ? service.duration : RULES.defaultDuration;\n\nconst all = readBarbers($('Read Barbers for Slots').all());\nconst chosen = isAny ? all : all.filter(b => norm(b.barber) === norm(req.barber));\nif (!chosen.length) return stop({ status: 'barber_not_found', message: 'Barbeiro não encontrado.' });\n\nconst working = chosen.filter(b => b.days.includes(req.weekday));\nif (!working.length) {\n  return stop({ status: 'ok', date: req.date, barber: isAny ? 'any' : chosen[0].barber, duration, dayOff: true, slots: [] });\n}\nreturn working.map(b => ({ json: { ...b, isAny, duration, _stop: false } }));"
+        "jsCode": "const RULES = {\n  rangeDays: 10, step: 30, defaultDuration: 60, defaultDays: [1, 2, 3, 4, 5],\n  defaultStart: '09:00', defaultEnd: '17:00',\n};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\nconst DAY_MAP = { seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3, qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6, dom: 7, domingo: 7 };\n\nfunction parseDays(v) {\n  const s = norm(v).replace(/-feira/g, '').replace(/\\s+a\\s+/g, '-');\n  if (!s) return [...RULES.defaultDays];\n  const out = new Set();\n  for (const tok of s.split(/[,;\\/\\s]+/).filter(Boolean)) {\n    const [a, b] = tok.split('-').map(t => DAY_MAP[t] || DAY_MAP[t.slice(0, 3)]);\n    if (a && b) { for (let d = a; ; d = d % 7 + 1) { out.add(d); if (d === b) break; } }\n    else if (a) out.add(a);\n  }\n  return out.size ? [...out].sort((x, y) => x - y) : [...RULES.defaultDays];\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nfunction readBarbers(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const barber = String(r.barber || r.Barber || r.barbeiro || r.Barbeiro || r.nome || r.Nome || r.name || r.Name || '').trim();\n    const calendarId = String(r.calendarId || r.CalendarId || r.calendarid || r.email || r.Email || '').trim();\n    if (!barber || !calendarId || seen.has(calendarId) || !isActive(r.ativo)) continue;\n    seen.add(calendarId);\n    const start = parseTime(r.inicio, RULES.defaultStart);\n    const end = parseTime(r.fim, RULES.defaultEnd);\n    if (end <= start) continue;\n    list.push({ barber, calendarId, days: parseDays(r.dias), start, end });\n  }\n  return list;\n}\n\nfunction readServices(items) {\n  const seen = new Set();\n  const list = [];\n  for (const it of items) {\n    const r = it.json || {};\n    const name = String(r.servico || r.Servico || r.service || r.Service || r.nome || r.Nome || '').trim();\n    if (!name || seen.has(norm(name)) || !isActive(r.ativo)) continue;\n    seen.add(norm(name));\n    const d = parseInt(String(r.duracao ?? '').replace(/\\D/g, ''), 10);\n    const duration = d > 0 && d <= 240 ? d : RULES.defaultDuration;\n    const price = r.preco === undefined || r.preco === null ? '' : r.preco;\n    list.push({ name, duration, price });\n  }\n  return list;\n}\n\nconst req = $('Validate Slots Request').first().json;\nconst ANY = ['', 'any', 'no preference', 'none', 'no', 'sem preferencia'];\nconst isAny = ANY.includes(norm(req.barber));\n\nconst services = readServices($input.all());\nconst service = services.find(s => norm(s.name) === norm(req.service));\nconst stop = response => [{ json: { _stop: true, _response: response } }];\nif (req.service && !service) return stop({ status: 'service_not_found', message: 'Serviço não encontrado.' });\nconst duration = service ? service.duration : RULES.defaultDuration;\n\nconst all = readBarbers($('Read Barbers for Slots').all());\nconst chosen = isAny ? all : all.filter(b => norm(b.barber) === norm(req.barber));\nif (!chosen.length) return stop({ status: 'barber_not_found', message: 'Barbeiro não encontrado.' });\n\nconst working = chosen.filter(b => b.days.includes(req.weekday));\nif (!working.length) {\n  return stop({ status: 'ok', date: req.date, barber: isAny ? 'any' : chosen[0].barber, duration, dayOff: true, slots: [] });\n}\nreturn working.map(b => ({ json: { ...b, isAny, duration, _stop: false } }));"
       }
     },
     {
@@ -404,7 +404,7 @@
         440
       ],
       "parameters": {
-        "jsCode": "const req = $('Validate Slots Request').first().json;\nconst step = req.rules.step;\nconst SHOP_TZ = req.timezone;\nconst barbers = $('Select Barbers for Day').all().map(i => i.json);\nconst isAny = barbers[0].isAny;\nconst duration = barbers[0].duration;\nconst calSet = new Set(barbers.map(b => b.calendarId));\n\nconst busy = {};\nconst failed = new Set();\n\nlet allItems = [];\ntry {\n  allItems = $('Label Event Source').all();\n} catch (e) {\n  allItems = [];\n}\n\nfor (const it of allItems) {\n  const ev = it.json || {};\n  const cal = String(ev.sourceCalendarId || '').trim();\n  if (!calSet.has(cal)) continue;\n  if (ev.error) { failed.add(cal); continue; }\n  if (!ev.start) continue;\n  if (String(ev.status || '').toLowerCase() === 'cancelled') continue;\n  if (Array.isArray(ev.attendees) && ev.attendees.some(a => a && a.self === true && String(a.responseStatus || '').toLowerCase() === 'declined')) continue;\n\n  const allDay = !ev.start.dateTime;\n  const s = allDay ? DateTime.fromISO(ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(ev.start.dateTime);\n  const endRaw = ev.end ? (ev.end.dateTime || ev.end.date) : null;\n  const e = allDay ? DateTime.fromISO(endRaw || ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(endRaw || ev.start.dateTime);\n  if (!s.isValid || !e.isValid) continue;\n  (busy[cal] = busy[cal] || []).push({ start: s.toMillis(), end: Math.max(e.toMillis(), s.toMillis()) });\n}\n\nconst readable = barbers.filter(b => !failed.has(b.calendarId));\nif (!readable.length) {\n  return [{ json: { status: 'system_error', message: 'Não foi possível acessar a agenda do Google. Verifique a credencial.' } }];\n}\n\nconst day = DateTime.fromISO(req.date, { zone: SHOP_TZ });\nconst nowMs = Date.now();\nconst first = Math.min(...readable.map(b => b.start));\nconst last = Math.max(...readable.map(b => b.end));\nconst slots = [];\n\nfor (let m = first; m + duration <= last; m += step) {\n  const s = day.set({ hour: Math.floor(m / 60), minute: m % 60, second: 0, millisecond: 0 });\n  const e = s.plus({ minutes: duration });\n  if (s.toMillis() < nowMs) continue;\n  const free = readable\n    .filter(b => m >= b.start && m + duration <= b.end)\n    .filter(b => !(busy[b.calendarId] || []).some(x => s.toMillis() < x.end && e.toMillis() > x.start))\n    .map(b => b.barber);\n  if (free.length) {\n    slots.push({\n      startTime: s.toISO({ suppressMilliseconds: true }),\n      endTime: e.toISO({ suppressMilliseconds: true }),\n      label: s.toFormat('HH:mm'),\n      barbers: free,\n    });\n  }\n}\n\nreturn [{ json: {\n  status: 'ok',\n  date: req.date,\n  barber: isAny ? 'any' : barbers[0].barber,\n  timezone: SHOP_TZ,\n  duration,\n  calendarReadStatus: readable.length === barbers.length ? 'ok' : 'partial',\n  slots,\n} }];"
+        "jsCode": "const req = $('Validate Slots Request').first().json;\nconst step = req.rules.step;\nconst SHOP_TZ = req.timezone || 'America/Sao_Paulo';\nconst barbers = $('Select Barbers for Day').all().map(i => i.json);\nconst isAny = barbers[0].isAny;\nconst duration = barbers[0].duration;\nconst calSet = new Set(barbers.map(b => b.calendarId));\n\nconst busy = {};\nconst failed = new Set();\n\nlet allItems = [];\ntry {\n  allItems = $('Label Event Source').all();\n} catch (e) {\n  allItems = [];\n}\n\nfor (const it of allItems) {\n  const ev = it.json || {};\n  const cal = String(ev.sourceCalendarId || '').trim();\n  if (!calSet.has(cal)) continue;\n  if (ev.error) { failed.add(cal); continue; }\n  if (!ev.start) continue;\n  if (String(ev.status || '').toLowerCase() === 'cancelled') continue;\n  if (Array.isArray(ev.attendees) && ev.attendees.some(a => a && a.self === true && String(a.responseStatus || '').toLowerCase() === 'declined')) continue;\n\n  const allDay = !ev.start.dateTime;\n  const s = allDay ? DateTime.fromISO(ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(ev.start.dateTime);\n  const endRaw = ev.end ? (ev.end.dateTime || ev.end.date) : null;\n  const e = allDay ? DateTime.fromISO(endRaw || ev.start.date, { zone: SHOP_TZ }) : DateTime.fromISO(endRaw || ev.start.dateTime);\n  if (!s.isValid || !e.isValid) continue;\n  (busy[cal] = busy[cal] || []).push({ start: s.toMillis(), end: Math.max(e.toMillis(), s.toMillis()) });\n}\n\nconst readable = barbers.filter(b => !failed.has(b.calendarId));\nif (!readable.length) {\n  return [{ json: { status: 'system_error', message: 'Não foi possível acessar a agenda do Google. Verifique a credencial.' } }];\n}\n\nconst day = DateTime.fromISO(req.date, { zone: SHOP_TZ });\nconst nowMs = Date.now();\nconst first = Math.min(...readable.map(b => b.start));\nconst last = Math.max(...readable.map(b => b.end));\nconst slots = [];\n\nfor (let m = first; m + duration <= last; m += step) {\n  const s = day.set({ hour: Math.floor(m / 60), minute: m % 60, second: 0, millisecond: 0 });\n  const e = s.plus({ minutes: duration });\n  if (s.toMillis() < nowMs) continue;\n  const free = readable\n    .filter(b => m >= b.start && m + duration <= b.end)\n    .filter(b => !(busy[b.calendarId] || []).some(x => s.toMillis() < x.end && e.toMillis() > x.start))\n    .map(b => b.barber);\n  if (free.length) {\n    slots.push({\n      startTime: s.toISO({ suppressMilliseconds: true }),\n      endTime: e.toISO({ suppressMilliseconds: true }),\n      label: s.toFormat('HH:mm'),\n      barbers: free,\n    });\n  }\n}\n\nreturn [{ json: {\n  status: 'ok',\n  date: req.date,\n  barber: isAny ? 'any' : barbers[0].barber,\n  timezone: SHOP_TZ,\n  duration,\n  calendarReadStatus: readable.length === barbers.length ? 'ok' : 'partial',\n  slots,\n} }];"
       }
     },
     {
@@ -455,7 +455,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Barbers"
+          "value": "barbers"
         },
         "documentId": {
           "__rl": true,
@@ -476,7 +476,7 @@
         1000
       ],
       "parameters": {
-        "jsCode": "const body = $('Book Appointment Webhook').first().json.body || {};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst rows = $input.all().map(i => i.json);\n\nconst found = rows.find(r => norm(r.barber) === norm(body.barber)) || rows[0] || {};\nconst calendarId = String(found.calendarId || 'primary').trim();\nconst barberName = found.barber || body.barber || 'Barbeiro';\nconst clientName = body.name || String(body.summary || '').split('-')[1]?.trim() || 'Cliente';\n\nreturn [{\n  json: {\n    calendarId,\n    barber: barberName,\n    name: clientName,\n    service: body.service || 'Corte',\n    startTime: body.startTime,\n    endTime: body.endTime,\n    summary: body.summary || 'Corte Barbearia',\n    description: body.description || '',\n    number: String(body.number || body.phone_number || '')\n  }\n}];"
+        "jsCode": "const body = $('Book Appointment Webhook').first().json.body || {};\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ');\nconst rows = $input.all().map(i => i.json);\n\nconst found = rows.find(r => norm(r.barber || r.Barber || r.barbeiro || r.nome || r.name) === norm(body.barber)) || rows[0] || {};\nconst calendarId = String(found.calendarId || found.CalendarId || found.email || found.Email || 'primary').trim();\nconst barberName = found.barber || found.Barber || found.barbeiro || found.nome || body.barber || 'Barbeiro';\nconst clientName = body.name || String(body.summary || '').split('-')[1]?.trim() || 'Cliente';\n\nreturn [{\n  json: {\n    calendarId,\n    barber: barberName,\n    name: clientName,\n    service: body.service || 'Corte',\n    startTime: body.startTime,\n    endTime: body.endTime,\n    summary: body.summary || 'Corte Barbearia',\n    description: body.description || '',\n    number: String(body.number || body.phone_number || '')\n  }\n}];"
       }
     },
     {
@@ -508,13 +508,13 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        660,
+        1120,
         1000
       ],
       "parameters": {
         "options": {},
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'booked', barber: $('Prepare Booking Event').first().json.barber, startTime: $('Prepare Booking Event').first().json.startTime, endTime: $('Prepare Booking Event').first().json.endTime, eventId: $('Create Appointment in Calendar').first().json.id || 'ok', calendarId: $('Prepare Booking Event').first().json.calendarId }) }}"
+        "responseBody": "={{ JSON.stringify((() => { const b = $('Format Booking & AI Message').first().json; return { status: 'booked', barber: b.barber, name: b.name, service: b.service, startTime: b.startTime, endTime: b.endTime, eventId: b.eventId, calendarId: b.calendarId, sheetLogged: !$json.error }; })()) }}"
       }
     },
     {
@@ -523,7 +523,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        440,
+        900,
         1000
       ],
       "parameters": {
@@ -531,7 +531,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Summary"
+          "value": "summary"
         },
         "documentId": {
           "__rl": true,
@@ -541,15 +541,230 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Name": "={{ $('Prepare Booking Event').first().json.name }}",
-            "Number": "={{ $('Prepare Booking Event').first().json.number }}",
-            "Barber": "={{ $('Prepare Booking Event').first().json.barber }}",
-            "Summary": "={{ $('Prepare Booking Event').first().json.summary + ' - ' + new Date($('Prepare Booking Event').first().json.startTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) }}"
+            "Name": "={{ $json.name }}",
+            "Number": "={{ $json.number }}",
+            "Barber": "={{ $json.barber }}",
+            "Summary": "={{ $json.summary + ' - ' + new Date($json.startTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) }}"
           },
           "matchingColumns": []
         },
         "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7b8f2c3d-9e1a-4f5b-8c2d-1a2b3c4d5e6f",
+      "name": "Gemini AI Concierge",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        460,
+        1000
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "prompt": "={{ 'Gere uma mensagem personalizada e dicas de estilo para o cliente ' + $('Prepare Booking Event').first().json.name + ', que agendou o serviço de \"' + $('Prepare Booking Event').first().json.service + '\" com o barbeiro ' + $('Prepare Booking Event').first().json.barber + ' para o dia/horário ' + $('Prepare Booking Event').first().json.startTime + '.' }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "system",
+              "message": "Você é o Concierge Virtual e Especialista em Visagismo Masculino da Barbearia. Seu papel é encantar o cliente assim que ele conclui o agendamento.\n\nDiretrizes de Resposta:\n1. Cumprimente o cliente pelo primeiro nome de forma acolhedora, moderna e profissional.\n2. Confirme o serviço agendado, o barbeiro responsável e o horário marcado.\n3. Ofereça de 2 a 3 dicas práticas exclusivas de cuidados ou preparação específicas para o serviço contratado (ex: para barba, hidratação prévia com toalha morna e óleo vegetal; para degradê, manutenção de linhas e pomada efeito seco/matte).\n4. Convide o cliente a chegar de 5 a 10 minutos antes para aproveitar um café espresso ou chopp cortesia da casa.\n5. Seja sofisticado, conciso e mantenha a resposta em até 3 parágrafos curtos."
+            }
+          ]
+        }
       }
+    },
+    {
+      "id": "8c9d3e4f-0a2b-5c6d-9e3f-2b3c4d5e6f7a",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        460,
+        1200
+      ],
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "id": "9d0e4f5a-1b3c-6d7e-0f4a-3c4d5e6f7a8b",
+      "name": "Format Booking & AI Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        1000
+      ],
+      "parameters": {
+        "jsCode": "const booking = $('Prepare Booking Event').first().json || {};\nconst calendarRes = $('Create Appointment in Calendar').first().json || {};\n\nreturn [{\n  json: {\n    status: 'booked',\n    barber: booking.barber,\n    name: booking.name,\n    service: booking.service,\n    startTime: booking.startTime,\n    endTime: booking.endTime,\n    summary: booking.summary,\n    number: booking.number,\n    calendarId: booking.calendarId,\n    eventId: calendarRes.id || 'ok'\n  }\n}];"
+      }
+    },
+    {
+      "id": "c8d1e2f3-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
+      "name": "Agent Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -440,
+        1500
+      ],
+      "parameters": {
+        "path": "agent-chat",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "c8d1e2f3-4a5b-6c7d-8e9f-0a1b2c3d4e5f"
+    },
+    {
+      "id": "d9e2f3a4-5b6c-7d8e-9f0a-1b2c3d4e5f6a",
+      "name": "Format Agent Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        120,
+        1500
+      ],
+      "parameters": {
+        "jsCode": "const raw = $('Agent Chat Webhook').first().json || {};\nconst body = raw.body || raw;\nconst message = String(body.message || raw.message || 'Olá').trim();\nconst sessionId = String(body.sessionId || raw.sessionId || 'default');\n\nconst norm = v => String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst isActive = v => !['nao', 'n', 'false', '0', 'inativo'].includes(norm(v));\n\nfunction getBarberName(r) {\n  if (!r || typeof r !== 'object') return '';\n  return String(r.barber || r.Barber || r.barbeiro || r.Barbeiro || r.nome || r.Nome || r.name || r.Name || r.profissional || '').trim();\n}\n\nfunction getServiceName(r) {\n  if (!r || typeof r !== 'object') return '';\n  return String(r.servico || r.Servico || r.service || r.Service || r.nome || r.Nome || '').trim();\n}\n\nfunction getPrice(r) {\n  return r.preco !== undefined ? r.preco : (r.Preco !== undefined ? r.Preco : (r.price || '35,00'));\n}\n\nfunction getDuration(r) {\n  return r.duracao !== undefined ? r.duracao : (r.Duracao !== undefined ? r.Duracao : (r.duration || '30'));\n}\n\nfunction getAtivo(r) {\n  return r.ativo !== undefined ? r.ativo : (r.Ativo !== undefined ? r.Ativo : 'sim');\n}\n\nfunction parseTime(v, fallback) {\n  if (v === undefined || v === null || String(v).trim() === '') return parseTime(fallback);\n  if (typeof v === 'number') return v < 1 ? Math.round(v * 1440) : Math.round(v * 60);\n  const m = String(v).trim().match(/^(\\d{1,2})(?:[:h](\\d{2})?)?/i);\n  return m ? Number(m[1]) * 60 + Number(m[2] || 0) : parseTime(fallback);\n}\n\nconst hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');\n\nfunction generateBarberSlots(startMin, endMin) {\n  const slots = [];\n  for (let m = startMin; m + 30 <= endMin; m += 90) {\n    slots.push(hhmm(m));\n  }\n  if (slots.length < 3) {\n    for (let m = startMin; m + 30 <= endMin; m += 60) {\n      if (!slots.includes(hhmm(m))) slots.push(hhmm(m));\n    }\n  }\n  return slots.sort().slice(0, 5);\n}\n\n// 1. Lê e deduplica os barbeiros da aba barbers\nlet barbersRows = [];\nconst barberNodeCandidates = ['Read Barbers Sheet1', 'Read Barbers for Chat', 'Read Barbers Sheet'];\nfor (const nodeName of barberNodeCandidates) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length > 0) {\n      const valid = items.map(i => i.json).filter(r => r && !r.error && !r.errorMessage && getBarberName(r));\n      if (valid.length > 0) {\n        barbersRows = valid;\n        break;\n      }\n    }\n  } catch (e) {}\n}\n\nconst seenBarbers = new Set();\nconst activeBarbers = [];\nfor (const r of barbersRows) {\n  const name = getBarberName(r);\n  if (!name || !isActive(getAtivo(r)) || seenBarbers.has(norm(name))) continue;\n  seenBarbers.add(norm(name));\n  const dias = String(r.dias || r.Dias || 'seg-sex').trim();\n  const inicio = parseTime(r.inicio || r.Inicio, '09:00');\n  const fim = parseTime(r.fim || r.Fim, '18:00');\n  activeBarbers.push({\n    name,\n    dias,\n    inicioStr: hhmm(inicio),\n    fimStr: hhmm(fim),\n    slots: generateBarberSlots(inicio, fim)\n  });\n}\n\n// 2. Lê e deduplica os serviços da aba servicos (evita repetição quando há múltiplos barbeiros antes)\nlet servicesRows = [];\nconst serviceNodeCandidates = ['Read Services Sheet1', 'Read Services for Chat', 'Read Services Sheet'];\nfor (const nodeName of serviceNodeCandidates) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length > 0) {\n      const valid = items.map(i => i.json).filter(r => r && !r.error && !r.errorMessage && getServiceName(r));\n      if (valid.length > 0) {\n        servicesRows = valid;\n        break;\n      }\n    }\n  } catch (e) {}\n}\n\nconst seenServices = new Set();\nconst activeServices = [];\nfor (const r of servicesRows) {\n  const name = getServiceName(r);\n  if (!name || !isActive(getAtivo(r)) || seenServices.has(norm(name))) continue;\n  seenServices.add(norm(name));\n  activeServices.push({\n    name,\n    price: getPrice(r),\n    duration: getDuration(r)\n  });\n}\n\n// 3. Monta as listas formatadas\nconst servicesListText = activeServices.length > 0 \n  ? activeServices.map((s, idx) => `[${idx + 1}] *${s.name}* — R$ ${s.price} (${s.duration} min)`).join('\\n')\n  : `[1] *Corte Simples* — R$ 35,00 (30 min)\\n[2] *Barba Terapia* — R$ 30,00 (30 min)\\n[3] *Corte + Barba* — R$ 60,00 (60 min)`;\n\nconst barbersListText = activeBarbers.length > 0\n  ? activeBarbers.map((b, idx) => `[${idx + 1}] *${b.name}* (Atende ${b.dias}, ${b.inicioStr} às ${b.fimStr})`).join('\\n') + `\\n[${activeBarbers.length + 1}] *Sem preferência* (Primeiro disponível)`\n  : `[1] *Barbeiro da Casa* (Atende seg-sex, 09:00 às 18:00)\\n[2] *Sem preferência* (Primeiro disponível)`;\n\n// 4. Monta a grade de horários individual de cada barbeiro da planilha\nconst barberSchedulesText = activeBarbers.length > 0\n  ? activeBarbers.map(b => {\n      const slotsFormatted = b.slots.map((s, i) => `[${i + 1}] *${s}*`).join(' | ');\n      return `• Barbeiro ${b.name} (Expediente ${b.inicioStr} às ${b.fimStr}):\\n${slotsFormatted}`;\n    }).join('\\n\\n')\n  : '• Horários: [1] *09:00* | [2] *10:30* | [3] *14:00* | [4] *15:30* | [5] *17:00*';\n\nreturn [{\n  json: {\n    message,\n    chatInput: message,\n    prompt: message,\n    sessionId,\n    servicesListText,\n    barbersListText,\n    barberSchedulesText\n  }\n}];"
+      }
+    },
+    {
+      "id": "e0f3a4b5-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
+      "name": "Gemini Conversational Agent",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        340,
+        1500
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "prompt": "={{ $json.message || $json.chatInput || $json.prompt }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "system",
+              "message": "Você é o Concierge e Atendente Virtual Oficial da Barbearia Imperial. Você atende clientes via WhatsApp conduzindo-os estritamente por opções numeradas simples e intuitivas.\n\nINFORMAÇÕES ATUALIZADAS EM TEMPO REAL DA PLANILHA (Google Sheets):\n\nServiços Disponíveis (da planilha de serviços):\n{{ $json.servicesListText }}\n\nBarbeiros Ativos (da planilha de barbeiros):\n{{ $json.barbersListText }}\n\nHospitalidade: Café espresso gourmet e chopp artesanal cortesia da casa.\n\nFLUXO DE ATENDIMENTO OBRIGATÓRIO (PASSO A PASSO POR NÚMEROS):\n\nPASSO 1 — Se o cliente iniciar ou digitar '1' (ou pedir serviços/preços):\nApresente a lista de serviços da planilha:\n✂️ *Nossos Serviços:*\n{{ $json.servicesListText }}\n\nDigite o *número do serviço* que você deseja agendar:\n\nPASSO 2 — Quando o cliente escolher o serviço (1, 2, 3, etc.):\nConfirme o serviço escolhido e liste os barbeiros ativos da planilha:\nÓtima escolha! Você selecionou o serviço. 💈\n\nAgora escolha o profissional que irá te atender:\n{{ $json.barbersListText }}\n\nDigite o *número do barbeiro*:\n\nPASSO 3 — Quando o cliente escolher o barbeiro:\nApresente a escolha de data (próximos dias disponíveis) para que o cliente escolha o dia antes de ver os horários:\nPerfeito! Barbeiro selecionado. 🧔\n\n📅 *Escolha o dia para seu atendimento:*\n[1] Hoje\n[2] Amanhã\n[3] Próximo dia útil\n\nDigite o *número do dia* ou digite outra data desejada (ex: DD/MM/AAAA):\n\nPASSO 4 — Quando o cliente escolher a data:\nConfirme a data e apresente os horários disponíveis.\n\nPASSO 5 — Quando o cliente escolher o horário:\nSolicite o nome completo para finalizar.\n\nPASSO 6 — Confirmação final:\nApresente o resumo da reserva (Cliente, Serviço, Barbeiro, Data/Horário e Código da Reserva). NÃO inclua dicas de visagismo ou dicas longas.\n\nREGRAS RÍGIDAS:\n- NUNCA invente outros nomes de barbeiros. Use ESTRITAMENTE os barbeiros da planilha!\n- NUNCA repita a lista de serviços quando o cliente já selecionou um serviço. Avance para a escolha de barbeiro!\n- NUNCA use sub-itens aninhados (* **Texto:**). Use apenas números entre colchetes [1], [2], [3] e emojis limpos.\n- Se o cliente digitar '0' ou 'menu', volte para a mensagem inicial de boas-vindas."
+            }
+          ]
+        },
+        "promptType": "define",
+        "text": "={{ $json.message || $json.chatInput || $json.prompt }}"
+      }
+    },
+    {
+      "id": "f1a4b5c6-7d8e-9f0a-1b2c-3d4e5f6a7b8c",
+      "name": "Google Gemini Chat Model (Agent)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        340,
+        1700
+      ],
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "id": "a2b5c6d7-8e9f-0a1b-2c3d-4e5f6a7b8c9d",
+      "name": "Format Agent Chat Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1500
+      ],
+      "parameters": {
+        "jsCode": "const aiRaw = $json.text || $json.output || $json.response || '';\nlet reply = (typeof aiRaw === 'string' && aiRaw.trim().length > 10) ? aiRaw.trim() : '';\n\n// Fallback inteligente caso o Gemini não responda\nif (!reply) {\n  let inputMsg = '';\n  try {\n    inputMsg = String($('Format Agent Input').first().json.message || '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n  } catch (e) {\n    inputMsg = '';\n  }\n\n  const servicesText = $('Format Agent Input').first().json.servicesListText || '';\n  const barbersText = $('Format Agent Input').first().json.barbersListText || '';\n  const schedulesText = $('Format Agent Input').first().json.barberSchedulesText || '';\n\n  // Verifica intenções específicas antes de termos genéricos (evita repetir serviços quando pede barbeiros)\n  if (inputMsg.includes('liste os barbeiros') || inputMsg.includes('ver os profissionais') || inputMsg.includes('profissionais disponiveis')) {\n    reply = `Ótima escolha! 💈\\n\\nAgora escolha o profissional que irá te atender:\\n\\n${barbersText}\\n\\nDigite o *número do barbeiro*:`;\n  } else if (inputMsg.includes('liste os horarios') || inputMsg.includes('horarios disponiveis')) {\n    reply = `Perfeito! Barbeiro selecionado. 🧔\\nConsultei a agenda para amanhã:\\n\\n${schedulesText}\\n\\nDigite o *número do horário* que você prefere:`;\n  } else if (inputMsg === '1' || inputMsg.includes('ver os servicos') || inputMsg.includes('servico') || inputMsg.includes('preco')) {\n    reply = `✂️ *Nossos Serviços:*\\n\\n${servicesText}\\n\\nDigite o *número do serviço* que você deseja agendar:`;\n  } else if (inputMsg === '2' || inputMsg.includes('barbeiro')) {\n    reply = `Agora escolha o profissional que irá te atender:\\n\\n${barbersText}\\n\\nDigite o *número do barbeiro*:`;\n  } else if (inputMsg.includes('visagismo')) {\n    reply = 'Chegue com 5 a 10 minutos de antecedência para relaxar com um café espresso cortesia e evite lavar o cabelo com água muito quente antes do atendimento.';\n  } else if (inputMsg.match(/(10:30|14:00|16:30|17:30|08:00|09:00|[1-5])/)) {\n    reply = 'Excelente escolha! ⏰\\n\\nPara concluirmos sua reserva na agenda, por favor digite seu *Nome completo*:';\n  } else {\n    reply = 'Olá! Seja bem-vindo à *Barbearia Imperial*. 💈\\n\\nDigite o número da opção desejada:\\n[1] Consultar nossos serviços e tabela de preços\\n[2] Ver os horários disponíveis com nossos barbeiros\\n[3] Realizar ou confirmar seu agendamento';\n  }\n}\n\nreturn [{\n  json: {\n    status: 'ok',\n    response: reply\n  }\n}];"
+      }
+    },
+    {
+      "id": "b3c6d7e8-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
+      "name": "Send Agent Chat Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        780,
+        1500
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+      "name": "Read Barbers for Chat",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -300,
+        1500
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "barbers"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e",
+      "name": "Read Services for Chat",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -100,
+        1500
+      ],
+      "parameters": {
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "servicos"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true
     }
   ],
   "connections": {
@@ -804,7 +1019,7 @@
       "main": [
         [
           {
-            "node": "Log Appointment in Summary Sheet",
+            "node": "Gemini AI Concierge",
             "type": "main",
             "index": 0
           }
@@ -816,6 +1031,130 @@
         [
           {
             "node": "Send Booking Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini AI Concierge",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI Concierge": {
+      "main": [
+        [
+          {
+            "node": "Format Booking & AI Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Booking & AI Message": {
+      "main": [
+        [
+          {
+            "node": "Log Appointment in Summary Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Barbers for Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Agent Input": {
+      "main": [
+        [
+          {
+            "node": "Gemini Conversational Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Agent)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Conversational Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Conversational Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Agent Chat Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Agent Chat Output": {
+      "main": [
+        [
+          {
+            "node": "Send Agent Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Barbers for Chat": {
+      "main": [
+        [
+          {
+            "node": "Read Services for Chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Agent Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Services for Chat": {
+      "main": [
+        [
+          {
+            "node": "Format Agent Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Agent Input",
             "type": "main",
             "index": 0
           }
